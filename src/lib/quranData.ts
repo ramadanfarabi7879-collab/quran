@@ -423,7 +423,7 @@ export function getHizbForPage(pageNum: number): number {
 export function getMadinahMushafPageUrl(page: number): string {
   const p = Math.max(1, Math.min(604, page));
   const padded = p.toString().padStart(3, "0");
-  return `https://android.quran.com/data/width_1260/page${padded}.png`;
+  return `https://files.quran.app/hafs/madani/width_1260/page${padded}.png`;
 }
 
 export function getRubForPage(pageNum: number): number {
