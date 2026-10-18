@@ -312,11 +312,11 @@ export default function StudentDashboard() {
               <span>المصحف الرقمي</span>
             </Link>
 
-            {/* 5. Sound Chime Test */}
+            {/* 5. Sound Chime */}
             <button
               onClick={() => playHalaqaStartSound()}
               className="p-2.5 rounded-2xl bg-slate-800/60 hover:bg-slate-700/60 text-slate-300 hover:text-white border border-slate-700 text-xs transition"
-              title="اختبار نغمة التنبيه الصوتي"
+              title="فحص نغمة التنبيه الصوتي"
             >
               <Volume2 className="w-4 h-4 text-amber-400" />
             </button>

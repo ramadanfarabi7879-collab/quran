@@ -376,7 +376,7 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
                         ? "معلم الحلقة"
                         : user.role === "ADMIN"
                         ? "مدير المنصة"
-                        : "طالب مجتهد"}
+                        : "طالب مسجل معتمد"}
                     </span>
                   </div>
                 </Link>

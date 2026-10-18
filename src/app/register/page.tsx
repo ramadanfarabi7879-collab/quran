@@ -86,7 +86,7 @@ export default function RegisterPage() {
                 تم تسجيل بياناتك بنجاح!
               </h2>
               <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
-                مرحباً بك يا <strong className="text-emerald-600">{name}</strong>. تم إرسال إشعار فوري لفضيلة الشيخ أحمد علي لمراجعة بياناتك وتفعيل حسابك.
+                مرحباً بك يا <strong className="text-emerald-600">{name}</strong>. تم إرسال إشعار فوري لفضيلة الشيخ أحمد المنشاوي لمراجعة بياناتك وتفعيل حسابك.
               </p>
             </div>
 
