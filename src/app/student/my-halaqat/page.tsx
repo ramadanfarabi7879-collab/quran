@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { CalendarDays, Users, Video, Clock, Plus, CheckCircle2, Send, XCircle } from "lucide-react";
+import { CalendarDays, Users, Video, Clock, Plus, CheckCircle2, Send, XCircle, Eye, UserPlus } from "lucide-react";
 
 export default function StudentHalaqatPage() {
   const [halaqat, setHalaqat] = useState<any[]>([]);
@@ -129,24 +129,43 @@ export default function StudentHalaqatPage() {
                   </div>
                 </div>
 
-                <div className="pt-2">
-                  {isLive && h.currentLiveSessionId ? (
+                <div className="pt-2 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    {/* 1. Enter Room Button (دخول الحلقة) */}
                     <button
-                      onClick={() => (window.location.href = `/classroom/${h.currentLiveSessionId}?role=student`)}
-                      className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 rounded-xl shadow transition"
+                      onClick={() =>
+                        (window.location.href = `/classroom/${
+                          h.currentLiveSessionId || h.id
+                        }?role=student`)
+                      }
+                      className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 rounded-xl shadow-sm transition active:scale-95"
+                      title="دخول قاعة الحلقة الآن"
                     >
-                      <Video className="w-4 h-4" />
-                      انضم للجلسة المباشرة
+                      <Video className="w-3.5 h-3.5" />
+                      <span>دخول الحلقة</span>
                     </button>
-                  ) : (
+
+                    {/* 2. Follow / Track (متابعة الحلقة) */}
                     <button
-                      onClick={() => setRequestModal({ isOpen: true, halaqa: h })}
-                      className="w-full flex items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs py-2 rounded-xl transition"
+                      onClick={() =>
+                        (window.location.href = `/student/mushaf`)
+                      }
+                      className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-bold text-xs py-2 rounded-xl transition"
+                      title="متابعة المصحف وورد الحفظ"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      تقديم طلب انضمام للحلقة
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>متابعة الحلقة</span>
                     </button>
-                  )}
+                  </div>
+
+                  {/* 3. Join Request Button (انضمام إلى الحلقة) */}
+                  <button
+                    onClick={() => setRequestModal({ isOpen: true, halaqa: h })}
+                    className="w-full flex items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs py-2 rounded-xl transition"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>انضمام إلى الحلقة</span>
+                  </button>
                 </div>
               </div>
             );

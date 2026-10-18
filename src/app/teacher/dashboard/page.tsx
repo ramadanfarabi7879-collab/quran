@@ -66,11 +66,7 @@ export default function TeacherDashboard() {
   }, []);
 
   const handleStartSessionNow = async () => {
-    const targetHalaqaId = selectedHalaqaId || halaqat[0]?.id;
-    if (!targetHalaqaId) {
-      alert("يرجى اختيار حلقة لبدء الجلسة");
-      return;
-    }
+    const targetHalaqaId = selectedHalaqaId || halaqat[0]?.id || "auto";
     setStartingSession(true);
     try {
       const res = await fetch("/api/live/session", {
@@ -168,15 +164,19 @@ export default function TeacherDashboard() {
                     اختر الحلقة:
                   </label>
                   <select
-                    value={selectedHalaqaId}
+                    value={selectedHalaqaId || halaqat[0]?.id || "auto"}
                     onChange={(e) => setSelectedHalaqaId(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-slate-100"
                   >
-                    {halaqat.map((h) => (
-                      <option key={h.id} value={h.id}>
-                        {h.name} ({h.level} - {h.scheduleDays})
-                      </option>
-                    ))}
+                    {halaqat.length === 0 ? (
+                      <option value="auto">حلقة الفجر والتحفيظ والتجويد (افتراضية فورية)</option>
+                    ) : (
+                      halaqat.map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.name} ({h.level} - {h.scheduleDays})
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 

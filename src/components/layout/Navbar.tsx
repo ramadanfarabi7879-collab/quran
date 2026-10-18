@@ -17,6 +17,7 @@ import {
   Clock,
   Sparkles,
   Menu,
+  Eye,
 } from "lucide-react";
 import { playHalaqaStartSound } from "@/lib/sound";
 
@@ -138,13 +139,22 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
               <span className="text-amber-200 text-sm font-medium">{activeSessionBanner.halaqaName}</span>
             </div>
           </div>
-          <Link
-            href={`/classroom/${activeSessionBanner.id}?role=${user?.role === "TEACHER" ? "teacher" : "student"}`}
-            className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition-all shadow"
-          >
-            <Video className="w-3.5 h-3.5" />
-            انضم للغرفة الافتراضية
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/classroom/${activeSessionBanner.id}?role=${user?.role === "TEACHER" ? "teacher" : "student"}`}
+              className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition-all shadow"
+            >
+              <Video className="w-3.5 h-3.5" />
+              دخول الحلقة
+            </Link>
+            <Link
+              href="/student/my-halaqat"
+              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white font-bold px-3 py-1 rounded-lg text-xs transition-all"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              متابعة الحلقة
+            </Link>
+          </div>
         </div>
       )}
 

@@ -22,6 +22,8 @@ import {
   Volume2,
   XCircle,
   ExternalLink,
+  Eye,
+  UserPlus,
 } from "lucide-react";
 
 export default function StudentDashboard() {
@@ -214,10 +216,17 @@ export default function StudentDashboard() {
               </button>
               <Link
                 href={`/classroom/${activeSession.id}?role=student`}
-                className="flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-6 py-3 rounded-2xl text-xs shadow-lg transition-transform hover:scale-105"
+                className="flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-3 rounded-2xl text-xs shadow-lg transition-transform hover:scale-105"
               >
                 <Video className="w-4 h-4" />
-                انضم للحلقة الآن
+                دخول الحلقة الآن
+              </Link>
+              <Link
+                href="/student/my-halaqat"
+                className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white font-bold px-4 py-3 rounded-2xl text-xs border border-white/20 transition"
+              >
+                <Eye className="w-4 h-4" />
+                متابعة الحلقة
               </Link>
             </div>
           </div>
@@ -238,25 +247,60 @@ export default function StudentDashboard() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => {
-                playHalaqaStartSound();
-              }}
-              className="flex items-center gap-2 bg-slate-800/80 hover:bg-slate-700/80 text-amber-300 font-bold px-4 py-2.5 rounded-2xl border border-amber-400/30 text-xs shadow transition active:scale-95"
-              title="اختبار نغمة التنبيه الصوتي"
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* 1. Enter Room Button (دخول الحلقة) */}
+            <Link
+              href={
+                activeSession
+                  ? `/classroom/${activeSession.id}?role=student`
+                  : halaqat[0]
+                  ? `/classroom/${halaqat[0].id}?role=student`
+                  : "/classroom/main-halaqa-session?role=student"
+              }
+              className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 hover:to-gold-accent text-slate-950 font-black px-4 py-2.5 rounded-2xl text-xs shadow-lg shadow-amber-950/20 transition-transform hover:scale-105 active:scale-95"
+              title="دخول قاعة الحلقة والتسميع المباشر"
             >
-              <Volume2 className="w-4 h-4" />
-              تجربة صوت التنبيه
-            </button>
+              <Video className="w-4 h-4" />
+              <span>دخول الحلقة</span>
+            </Link>
 
+            {/* 2. Follow / Track Halaqa (متابعة الحلقة) */}
+            <Link
+              href="/student/my-halaqat"
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-3.5 py-2.5 rounded-2xl border border-white/20 text-xs shadow transition active:scale-95"
+              title="متابعة الحلقات وجداول الانعقاد"
+            >
+              <Eye className="w-4 h-4 text-amber-300" />
+              <span>متابعة الحلقة</span>
+            </Link>
+
+            {/* 3. Join New Halaqa (انضمام إلى حلقة) */}
+            <Link
+              href="/student/my-halaqat"
+              className="flex items-center gap-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white font-bold px-3.5 py-2.5 rounded-2xl border border-emerald-500/40 text-xs shadow transition active:scale-95"
+              title="طلب الانضمام إلى حلقات جديدة"
+            >
+              <UserPlus className="w-4 h-4 text-emerald-300" />
+              <span>انضمام إلى حلقة</span>
+            </Link>
+
+            {/* 4. Mushaf */}
             <Link
               href="/student/mushaf"
-              className="flex items-center gap-2 bg-islamic-700 hover:bg-islamic-600 text-white font-bold px-4 py-2.5 rounded-2xl border border-emerald-500/30 text-xs shadow transition"
+              className="flex items-center gap-1.5 bg-slate-800/80 hover:bg-slate-700/80 text-amber-300 font-bold px-3.5 py-2.5 rounded-2xl border border-amber-400/30 text-xs shadow transition"
             >
               <BookOpen className="w-4 h-4 text-gold-accent" />
-              المصحف الرقمي
+              <span>المصحف الرقمي</span>
             </Link>
+
+            {/* 5. Sound Chime Test */}
+            <button
+              onClick={() => playHalaqaStartSound()}
+              className="p-2.5 rounded-2xl bg-slate-800/60 hover:bg-slate-700/60 text-slate-300 hover:text-white border border-slate-700 text-xs transition"
+              title="اختبار نغمة التنبيه الصوتي"
+            >
+              <Volume2 className="w-4 h-4 text-amber-400" />
+            </button>
           </div>
         </div>
 
@@ -395,6 +439,41 @@ export default function StudentDashboard() {
                   <span>المستوى:</span>
                   <span className="font-bold text-emerald-600">متقدم (حفظ وتثبيت)</span>
                 </div>
+              </div>
+
+              {/* Action Buttons: دخول الحلقة - متابعة الحلقة - انضمام */}
+              <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center gap-2">
+                <Link
+                  href={
+                    activeSession
+                      ? `/classroom/${activeSession.id}?role=student`
+                      : halaqat[0]
+                      ? `/classroom/${halaqat[0].id}?role=student`
+                      : "/classroom/main-halaqa-session?role=student"
+                  }
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 rounded-xl shadow-sm transition active:scale-95"
+                  title="دخول قاعة الحلقة الآن"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>دخول الحلقة</span>
+                </Link>
+
+                <Link
+                  href="/student/my-halaqat"
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-bold text-xs py-2 rounded-xl transition"
+                  title="متابعة الحلقة والجدول"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>متابعة الحلقة</span>
+                </Link>
+
+                <Link
+                  href="/student/my-halaqat"
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition"
+                  title="طلب انضمام لحلقة أخرى"
+                >
+                  <UserPlus className="w-4 h-4" />
+                </Link>
               </div>
             </div>
           </div>

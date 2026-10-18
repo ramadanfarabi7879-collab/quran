@@ -21,6 +21,9 @@ import {
   ChevronUp,
   Users,
   Video,
+  Eye,
+  LogIn,
+  UserPlus,
 } from "lucide-react";
 
 export interface ScheduleHalaqa {
@@ -518,10 +521,37 @@ export function ScheduleBoardWidget({
                             </button>
                           </>
                         ) : (
-                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" />
-                            متاح للحضور
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* 1. Enter Room Button (دخول الحلقة) */}
+                            <Link
+                              href={`/classroom/${h.id}?role=student`}
+                              className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-xs transition active:scale-95"
+                              title="دخول قاعة الحلقة الآن"
+                            >
+                              <Video className="w-3.5 h-3.5" />
+                              <span>دخول الحلقة</span>
+                            </Link>
+
+                            {/* 2. Follow / Track Halaqa (متابعة الحلقة) */}
+                            <Link
+                              href="/student/my-halaqat"
+                              className="inline-flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-[11px] px-2 py-1.5 rounded-lg border border-amber-500/30 transition"
+                              title="متابعة تفاصيل وجدول الحلقة"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>متابعة الحلقة</span>
+                            </Link>
+
+                            {/* 3. Join / Enroll Halaqa (انضمام إلى الحلقة) */}
+                            <Link
+                              href="/student/my-halaqat"
+                              className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-[11px] px-2 py-1.5 rounded-lg transition"
+                              title="طلب الانضمام للحلقة"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              <span>انضمام</span>
+                            </Link>
+                          </div>
                         )}
                       </div>
                     </div>

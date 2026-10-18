@@ -5,8 +5,7 @@ import { realtimeHub } from "@/lib/realtime";
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    const halaqat = await prisma.halaqa.findMany({
+    let halaqat = await prisma.halaqa.findMany({
       include: {
         teacher: { include: { user: true } },
         enrollments: {
@@ -24,6 +23,96 @@ export async function GET() {
       },
       orderBy: { createdAt: "desc" },
     });
+
+    if (halaqat.length === 0) {
+      let teacherUser = await prisma.user.findFirst({
+        where: { role: "TEACHER" },
+        include: { teacherProfile: true },
+      });
+
+      if (!teacherUser) {
+        teacherUser = await prisma.user.create({
+          data: {
+            email: "teacher@quran.com",
+            name: "الشيخ أحمد المنشاوي",
+            password: "teacher",
+            role: "TEACHER",
+            avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+            phone: "+966500000002",
+            isActive: true,
+            teacherProfile: {
+              create: {
+                title: "الشيخ المقرئ",
+                bio: "مجاز في القراءات العشر، مع خبرة 15 عاماً في إقراء القرآن الكريم.",
+                allowStudentMessaging: true,
+              },
+            },
+          },
+          include: { teacherProfile: true },
+        });
+      } else if (!teacherUser.teacherProfile) {
+        await prisma.teacherProfile.create({
+          data: {
+            userId: teacherUser.id,
+            title: "الشيخ المقرئ",
+            bio: "معلم معتمد في منصة ورتّل",
+          },
+        });
+        teacherUser = await prisma.user.findFirst({
+          where: { role: "TEACHER" },
+          include: { teacherProfile: true },
+        });
+      }
+
+      const teacherProfileId = teacherUser!.teacherProfile!.id;
+
+      await prisma.halaqa.create({
+        data: {
+          name: "حلقة الفجر والتحفيظ والتجويد",
+          description: "حلقة يومية مباركة بعد صلاة الفجر لإتقان الحفظ ومراجعة القرآن الكريم.",
+          capacity: 25,
+          level: "متقدم (حفظ وتثبيت)",
+          scheduleDays: "السبت, الإثنين, الأربعاء",
+          startTime: "05:30",
+          endTime: "07:00",
+          teacherId: teacherProfileId,
+          status: "ACTIVE",
+        },
+      });
+
+      await prisma.halaqa.create({
+        data: {
+          name: "حلقة المساء لمراجعة وتثبيت القرآن",
+          description: "حلقة مسائية للمراجعة والتسميع مع تطبيق أحكام التجويد ومخارج الحروف.",
+          capacity: 20,
+          level: "متوسط",
+          scheduleDays: "الأحد, الثلاثاء, الخميس",
+          startTime: "16:00",
+          endTime: "17:30",
+          teacherId: teacherProfileId,
+          status: "ACTIVE",
+        },
+      });
+
+      halaqat = await prisma.halaqa.findMany({
+        include: {
+          teacher: { include: { user: true } },
+          enrollments: {
+            where: { status: "ACTIVE" },
+            include: { student: { include: { user: true } } },
+          },
+          joinRequests: {
+            where: { status: "PENDING" },
+            include: { student: { include: { user: true } } },
+          },
+          liveSessions: {
+            where: { status: "ACTIVE" },
+            take: 1,
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    }
 
     return NextResponse.json({ halaqat });
   } catch (error) {
