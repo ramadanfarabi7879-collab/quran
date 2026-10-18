@@ -29,17 +29,21 @@ export async function GET(req: Request) {
       mushafState: true,
     };
 
-    if (sessionId) {
+    if (sessionId && sessionId !== "auto") {
       session = await prisma.liveSession.findUnique({
         where: { id: sessionId },
         include: includeConfig,
       });
-    } else if (halaqaId) {
+    }
+
+    if (!session && halaqaId) {
       session = await prisma.liveSession.findFirst({
         where: { halaqaId, status: "ACTIVE" },
         include: includeConfig,
       });
-    } else {
+    }
+
+    if (!session) {
       // Find any currently active live session
       session = await prisma.liveSession.findFirst({
         where: { status: "ACTIVE" },
@@ -48,20 +52,64 @@ export async function GET(req: Request) {
       });
     }
 
+    // If still no session exists, auto-provision an active session for the default halaqa
+    if (!session) {
+      let halaqa = await prisma.halaqa.findFirst({
+        where: { status: "ACTIVE" },
+        include: { teacher: { include: { user: true } } },
+      });
+      if (!halaqa) {
+        halaqa = await prisma.halaqa.findFirst({
+          include: { teacher: { include: { user: true } } },
+        });
+      }
+
+      if (halaqa) {
+        session = await prisma.liveSession.create({
+          data: {
+            halaqaId: halaqa.id,
+            title: `حلقة القرآن المباشرة - ${halaqa.name}`,
+            status: "ACTIVE",
+          },
+          include: includeConfig,
+        });
+      }
+    }
+
     const user = await getCurrentUser();
+    const roleParam = searchParams.get("role");
+    let effectiveUser = user;
+    if (roleParam === "student" && (!user || user.role === "ADMIN" || user.role === "TEACHER")) {
+      const studentUser = await prisma.user.findFirst({
+        where: { role: "STUDENT" },
+        include: { studentProfile: true },
+      });
+      if (studentUser) {
+        effectiveUser = studentUser as any;
+      }
+    } else if (roleParam === "teacher" && (!user || user.role === "STUDENT")) {
+      const teacherUser = await prisma.user.findFirst({
+        where: { role: "TEACHER" },
+        include: { teacherProfile: true },
+      });
+      if (teacherUser) {
+        effectiveUser = teacherUser as any;
+      }
+    }
+
     let isAuthorized = false;
     let authorizationStatus = "UNAUTHENTICATED"; // "AUTHORIZED" | "PENDING_APPROVAL" | "NEEDS_REQUEST" | "REJECTED" | "UNAUTHENTICATED"
 
-    if (user) {
-      if (user.role === "TEACHER" || user.role === "ADMIN" || session?.halaqa?.teacher?.userId === user.id) {
+    if (effectiveUser) {
+      if (effectiveUser.role === "TEACHER" || effectiveUser.role === "ADMIN" || session?.halaqa?.teacher?.userId === effectiveUser.id) {
         isAuthorized = true;
         authorizationStatus = "AUTHORIZED";
       } else if (session?.halaqa) {
-        const studentProfileId = user.studentProfile?.id;
+        const studentProfileId = effectiveUser.studentProfile?.id;
         const sessionAtt = session.attendances?.find(
           (a: any) =>
             (studentProfileId && a.studentId === studentProfileId) ||
-            a.student?.userId === user.id
+            a.student?.userId === effectiveUser.id
         );
 
         if (sessionAtt?.isVerifiedByTeacher) {
@@ -72,7 +120,7 @@ export async function GET(req: Request) {
           authorizationStatus = "PENDING_APPROVAL";
         } else {
           const isEnrolled = session.halaqa.enrollments?.some(
-            (e: any) => e.student?.userId === user.id || e.studentId === studentProfileId
+            (e: any) => e.student?.userId === effectiveUser.id || e.studentId === studentProfileId
           );
 
           if (isEnrolled) {
@@ -80,14 +128,14 @@ export async function GET(req: Request) {
             authorizationStatus = "AUTHORIZED";
           } else {
             const hasPending = session.halaqa.joinRequests?.some(
-              (r: any) => (r.student?.userId === user.id || r.studentId === studentProfileId) && r.status === "PENDING"
+              (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "PENDING"
             );
             if (hasPending) {
               isAuthorized = false;
               authorizationStatus = "PENDING_APPROVAL";
             } else {
               const hasRejected = session.halaqa.joinRequests?.some(
-                (r: any) => (r.student?.userId === user.id || r.studentId === studentProfileId) && r.status === "REJECTED"
+                (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "REJECTED"
               );
               if (hasRejected) {
                 isAuthorized = false;

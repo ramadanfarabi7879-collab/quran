@@ -20,7 +20,7 @@ import { playHalaqaStartSound } from "@/lib/sound";
 export default function SimulationPage() {
   const [key, setKey] = useState(0);
   const [isSimulating, setIsSimulating] = useState(false);
-  const [viewMode, setViewMode] = useState<"MUSHAF" | "DASHBOARDS">("MUSHAF");
+  const [viewMode, setViewMode] = useState<"CLASSROOM" | "MUSHAF" | "DASHBOARDS">("CLASSROOM");
 
   const handleRestart = () => {
     setKey((prev) => prev + 1);
@@ -74,10 +74,21 @@ export default function SimulationPage() {
         {/* View Mode Switcher */}
         <div className="flex items-center bg-slate-800/90 p-1 rounded-xl border border-slate-700">
           <button
+            onClick={() => setViewMode("CLASSROOM")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              viewMode === "CLASSROOM"
+                ? "bg-amber-500 text-slate-950 shadow-md font-black"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Video className="w-3.5 h-3.5" />
+            قاعة البث المباشر (صوت وفيديو)
+          </button>
+          <button
             onClick={() => setViewMode("MUSHAF")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
               viewMode === "MUSHAF"
-                ? "bg-islamic-700 text-white shadow-md"
+                ? "bg-islamic-700 text-white shadow-md font-bold"
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
@@ -88,7 +99,7 @@ export default function SimulationPage() {
             onClick={() => setViewMode("DASHBOARDS")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
               viewMode === "DASHBOARDS"
-                ? "bg-islamic-700 text-white shadow-md"
+                ? "bg-islamic-700 text-white shadow-md font-bold"
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
@@ -144,7 +155,9 @@ export default function SimulationPage() {
               </span>
             </div>
             <span className="text-[10px] text-amber-300 font-bold bg-amber-950/60 border border-amber-400/20 px-2.5 py-0.5 rounded-md">
-              {viewMode === "MUSHAF"
+              {viewMode === "CLASSROOM"
+                ? "بث المعلم المباشر (صوت وفيديو حقيقي)"
+                : viewMode === "MUSHAF"
                 ? "اضغط 'بدء التسميع المغلق' بالأعلى للتحكم"
                 : "اضغط على 'إنشاء جلسة الآن' بالأسفل"}
             </span>
@@ -153,7 +166,14 @@ export default function SimulationPage() {
           <div className="flex-1 w-full h-[calc(100vh-8.5rem)] bg-white">
             <iframe
               key={`teacher-${viewMode}-${key}`}
-              src={viewMode === "MUSHAF" ? "/teacher/mushaf" : "/teacher/dashboard"}
+              src={
+                viewMode === "CLASSROOM"
+                  ? "/classroom/auto?role=teacher"
+                  : viewMode === "MUSHAF"
+                  ? "/teacher/mushaf"
+                  : "/teacher/dashboard"
+              }
+              allow="camera; microphone; display-capture; autoplay"
               className="w-full h-full border-0"
               title="Teacher Dashboard"
             />
@@ -171,7 +191,9 @@ export default function SimulationPage() {
               </span>
             </div>
             <span className="text-[10px] text-emerald-300 font-bold bg-emerald-950/60 border border-emerald-400/20 px-2.5 py-0.5 rounded-md">
-              {viewMode === "MUSHAF"
+              {viewMode === "CLASSROOM"
+                ? "بث الطالب المباشر (صوت وفيديو حقيقي)"
+                : viewMode === "MUSHAF"
                 ? "المصحف سيختفي هنا فورياً عند أمر المعلم"
                 : "ستنطلق النغمة وتنبثق نافذة التنبيه هنا"}
             </span>
@@ -180,7 +202,14 @@ export default function SimulationPage() {
           <div className="flex-1 w-full h-[calc(100vh-8.5rem)] bg-white">
             <iframe
               key={`student-${viewMode}-${key}`}
-              src={viewMode === "MUSHAF" ? "/student/mushaf" : "/student/dashboard"}
+              src={
+                viewMode === "CLASSROOM"
+                  ? "/classroom/auto?role=student"
+                  : viewMode === "MUSHAF"
+                  ? "/student/mushaf"
+                  : "/student/dashboard"
+              }
+              allow="camera; microphone; display-capture; autoplay"
               className="w-full h-full border-0"
               title="Student Dashboard"
             />

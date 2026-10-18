@@ -64,6 +64,176 @@ const ICE_SERVERS: RTCConfiguration = {
   iceCandidatePoolSize: 10,
 };
 
+// Canvas-based animated video stream fallback with sub-audible audio carrier
+function createSyntheticMediaStream(role: string, name: string): MediaStream {
+  if (typeof document === "undefined") {
+    return new MediaStream();
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 640;
+  canvas.height = 480;
+  const ctx = canvas.getContext("2d");
+
+  let frame = 0;
+  const isTeacherRole = role === "teacher";
+
+  const renderFrame = () => {
+    if (!ctx) return;
+    frame++;
+
+    // Gradient background
+    const grad = ctx.createLinearGradient(0, 0, 640, 480);
+    if (isTeacherRole) {
+      grad.addColorStop(0, "#064e3b");
+      grad.addColorStop(0.5, "#0f172a");
+      grad.addColorStop(1, "#022c22");
+    } else {
+      grad.addColorStop(0, "#1e1b4b");
+      grad.addColorStop(0.5, "#0f172a");
+      grad.addColorStop(1, "#451a03");
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 640, 480);
+
+    // Glowing aura ring
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(320, 190, 72 + Math.sin(frame * 0.08) * 5, 0, Math.PI * 2);
+    ctx.strokeStyle = isTeacherRole ? "rgba(16, 185, 129, 0.45)" : "rgba(245, 158, 11, 0.45)";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.restore();
+
+    // Central circular avatar plate
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(320, 190, 62, 0, Math.PI * 2);
+    ctx.fillStyle = isTeacherRole ? "#047857" : "#b45309";
+    ctx.fill();
+    ctx.restore();
+
+    // Initials / Title
+    ctx.font = "bold 30px 'Segoe UI', Tahoma, sans-serif";
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(isTeacherRole ? "الشيخ" : "طالب", 320, 190);
+
+    // Participant Name
+    ctx.font = "bold 20px 'Segoe UI', Tahoma, sans-serif";
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillText(name, 320, 280);
+
+    // Role text
+    ctx.font = "14px 'Segoe UI', Tahoma, sans-serif";
+    ctx.fillStyle = isTeacherRole ? "#34d399" : "#fbbf24";
+    ctx.fillText(isTeacherRole ? "المقرئ المعتمد • بث حي نشط" : "طالب العلم • متصل ومستمع", 320, 310);
+
+    // Animated Soundwave bars at the bottom
+    const barCount = 18;
+    const barWidth = 10;
+    const spacing = 6;
+    const totalW = barCount * (barWidth + spacing) - spacing;
+    const startX = (640 - totalW) / 2;
+    ctx.fillStyle = isTeacherRole ? "#10b981" : "#f59e0b";
+
+    for (let i = 0; i < barCount; i++) {
+      const h = 10 + Math.abs(Math.sin((frame * 0.12) + i * 0.45)) * 32;
+      ctx.fillRect(startX + i * (barWidth + spacing), 420 - h, barWidth, h);
+    }
+
+    // Top indicator
+    ctx.font = "bold 13px 'Segoe UI', Tahoma, sans-serif";
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.arc(580, 40, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "right";
+    ctx.fillText("بث حي مباشر", 570, 44);
+
+    // Digital time
+    const timeStr = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    ctx.font = "12px monospace";
+    ctx.fillStyle = "#94a3b8";
+    ctx.textAlign = "left";
+    ctx.fillText(timeStr, 50, 44);
+
+    requestAnimationFrame(renderFrame);
+  };
+
+  renderFrame();
+
+  const stream = (canvas as any).captureStream ? (canvas as any).captureStream(25) : (canvas as any).mozCaptureStream(25);
+
+  // Synthesize gentle sub-audible carrier audio track
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioCtx) {
+      const audioCtx = new AudioCtx();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.00001;
+      osc.connect(gain);
+      const dest = audioCtx.createMediaStreamDestination();
+      gain.connect(dest);
+      osc.start();
+      dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
+    }
+  } catch (e) {
+    console.warn("AudioContext synthetic track fallback error:", e);
+  }
+
+  return stream;
+}
+
+// Real-time audio analyser helper to detect when a participant is speaking
+function setupAudioAnalyser(stream: MediaStream, onSpeakingChange: (speaking: boolean) => void): () => void {
+  try {
+    const audioTrack = stream.getAudioTracks()[0];
+    if (!audioTrack) return () => {};
+
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return () => {};
+
+    const audioCtx = new AudioCtx();
+    const source = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 128;
+    source.connect(analyser);
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    let isSpeaking = false;
+
+    const interval = setInterval(() => {
+      analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const avg = sum / dataArray.length;
+      const speakingNow = avg > 12;
+
+      if (speakingNow !== isSpeaking) {
+        isSpeaking = speakingNow;
+        onSpeakingChange(speakingNow);
+      }
+    }, 150);
+
+    return () => {
+      clearInterval(interval);
+      try {
+        source.disconnect();
+        analyser.disconnect();
+        audioCtx.close().catch(() => {});
+      } catch {}
+    };
+  } catch {
+    return () => {};
+  }
+}
+
 export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const { user } = useAuth();
   const { lastEvent } = useRealtime();
@@ -104,6 +274,12 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
   const [remotePeerName, setRemotePeerName] = useState<string>("");
   const [connectionStatus, setConnectionStatus] = useState<string>("بانتظار الطرف الآخر...");
+  const [mediaTypeNotice, setMediaTypeNotice] = useState<string>("");
+  const [localIsSpeaking, setLocalIsSpeaking] = useState(false);
+  const [remoteIsSpeaking, setRemoteIsSpeaking] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [studentHandAlert, setStudentHandAlert] = useState<{ studentName: string; visible: boolean } | null>(null);
+
   const [chatMessages, setChatMessages] = useState<any[]>([
     {
       sender: "النظام",
@@ -138,7 +314,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   // Fetch session details & verify Sheikh approval
   const fetchSession = async () => {
     try {
-      const res = await fetch(`/api/live/session?sessionId=${sessionId}`);
+      const res = await fetch(`/api/live/session?sessionId=${sessionId}&role=${roleParam || ""}`);
       if (res.ok) {
         const data = await res.json();
         setSession(data.session);
@@ -358,6 +534,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         });
       }
 
+      // Attach audio analyser to detect when the remote peer is speaking
+      setupAudioAnalyser(stream, setRemoteIsSpeaking);
+
       setHasRemoteStream(true);
       setConnectionStatus("متصل مباشرة");
     };
@@ -376,14 +555,17 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     return pc;
   };
 
-  // Setup local camera & microphone stream
+  // Setup local camera & microphone stream with intelligent fallback
   useEffect(() => {
     if (!isTeacher && authStatus !== "AUTHORIZED") return;
     let active = true;
 
     const initMedia = async () => {
+      let stream: MediaStream | null = null;
+
+      // Tier 1: Try real physical camera & microphone
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 640 },
             height: { ideal: 480 },
@@ -395,27 +577,49 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             autoGainControl: true,
           },
         });
-
-        if (!active) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
+        setMediaTypeNotice("الكاميرا والميكروفون متصلان بنجاح");
+      } catch (errVideo) {
+        console.warn("Physical camera access failed or locked by another tab. Trying mic-only...", errVideo);
+        // Tier 2: Try physical microphone only + synthetic canvas video
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          });
+          const synthStream = createSyntheticMediaStream(myRole, myName);
+          stream = new MediaStream([
+            ...synthStream.getVideoTracks(),
+            ...micStream.getAudioTracks(),
+          ]);
+          setMediaTypeNotice("الميكروفون متصل (بث فيديو افتراضي تفاعلي)");
+        } catch (errAudio) {
+          console.warn("Physical mic access failed or unavailable. Falling back to synthetic media...", errAudio);
+          // Tier 3: Complete synthetic media stream fallback
+          stream = createSyntheticMediaStream(myRole, myName);
+          setMediaTypeNotice("بث تفاعلي ذكي (كاميرا وميكروفون افتراضيان)");
         }
-
-        localStreamRef.current = stream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-
-        // Attach tracks to existing PC if already created
-        if (peerConnectionRef.current) {
-          syncLocalTracks(peerConnectionRef.current);
-        }
-
-        // Announce presence immediately
-        await sendSignalingMessage("PRESENCE", { role: myRole, name: myName });
-      } catch (err) {
-        console.warn("Camera/Mic not accessible or permission denied:", err);
       }
+
+      if (!active || !stream) {
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      localStreamRef.current = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play().catch(() => {});
+      }
+
+      // Attach audio analyser for local speech detection
+      setupAudioAnalyser(stream, setLocalIsSpeaking);
+
+      // Attach tracks to existing PC if already created
+      if (peerConnectionRef.current) {
+        syncLocalTracks(peerConnectionRef.current);
+      }
+
+      // Announce presence immediately
+      await sendSignalingMessage("PRESENCE", { role: myRole, name: myName });
     };
 
     initMedia();
@@ -529,6 +733,39 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           } else {
             iceCandidatesQueue.current.push(data);
           }
+        } else if (signalType === "CHAT_MESSAGE" && data) {
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: data.sender || senderName || "المشارك",
+              text: data.text,
+              time: data.time || new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
+              isMe: false,
+            },
+          ]);
+          if (activeTab !== "CHAT") {
+            setUnreadChatCount((prev) => prev + 1);
+          }
+        } else if (signalType === "HAND_RAISE" && data) {
+          if (isTeacher) {
+            if (data.raised) {
+              setStudentHandAlert({
+                studentName: data.studentName || senderName || "طالب العلم",
+                visible: true,
+              });
+            } else {
+              setStudentHandAlert(null);
+            }
+          }
+        } else if (signalType === "REMOTE_MUTE") {
+          if (!isTeacher) {
+            setIsMicOn(false);
+            if (localStreamRef.current) {
+              localStreamRef.current.getAudioTracks().forEach((track) => {
+                track.enabled = false;
+              });
+            }
+          }
         }
       } catch (err) {
         console.error("Signal handle error:", err);
@@ -609,20 +846,43 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     }
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
+
+    const time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+    const text = chatInput.trim();
 
     setChatMessages((prev) => [
       ...prev,
       {
         sender: myName,
-        text: chatInput,
-        time: new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
+        text,
+        time,
         isMe: true,
       },
     ]);
     setChatInput("");
+
+    await sendSignalingMessage("CHAT_MESSAGE", {
+      sender: myName,
+      text,
+      time,
+    });
+  };
+
+  const toggleHandRaise = async () => {
+    const next = !isHandRaised;
+    setIsHandRaised(next);
+    await sendSignalingMessage("HAND_RAISE", {
+      raised: next,
+      studentName: myName,
+    });
+  };
+
+  const handleTeacherMuteStudent = async () => {
+    await sendSignalingMessage("REMOTE_MUTE", { target: "student" });
+    alert("تم إرسال أمر كتم صوت الطالب بنجاح.");
   };
 
   const handleToggleRecording = async () => {
@@ -818,6 +1078,37 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         </div>
       )}
 
+      {/* Teacher Student Hand Raise Toast */}
+      {isTeacher && studentHandAlert?.visible && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 max-w-md w-[90%] animate-in slide-in-from-top duration-200">
+          <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 text-white rounded-2xl p-3.5 shadow-2xl border-2 border-amber-500/80 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-black">
+                <Hand className="w-5 h-5 animate-bounce" />
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-black text-amber-300 block">طلب استئذان / تسميع</span>
+                <span className="text-xs font-bold text-white block">{studentHandAlert.studentName} رفع يده</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setStudentHandAlert(null)}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3 py-1.5 rounded-xl shadow transition"
+              >
+                تفضل بالتسميع ✅
+              </button>
+              <button
+                onClick={() => setStudentHandAlert(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hidden Unmuted Audio Element to guarantee clear two-way sound */}
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
@@ -847,6 +1138,11 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             <span className={`w-2 h-2 rounded-full ${hasRemoteStream ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
             {hasRemoteStream ? "اتصال فيديو مباشر نشط" : connectionStatus}
           </div>
+          {mediaTypeNotice && (
+            <span className="text-[10px] text-slate-400 bg-slate-800/80 border border-slate-700 px-2 py-0.5 rounded-md hidden md:inline">
+              {mediaTypeNotice}
+            </span>
+          )}
           <span className="font-bold text-sm text-slate-100 hidden sm:inline">
             {session?.halaqa?.name || "حلقة الفجر والتحفيظ والتجويد"}
           </span>
@@ -878,12 +1174,20 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
               المصحف
             </button>
             <button
-              onClick={() => setActiveTab("CHAT")}
-              className={`px-2.5 py-1 rounded-md ${
+              onClick={() => {
+                setActiveTab("CHAT");
+                setUnreadChatCount(0);
+              }}
+              className={`px-2.5 py-1 rounded-md relative ${
                 activeTab === "CHAT" ? "bg-islamic-700 text-white font-bold" : "text-slate-400"
               }`}
             >
               المحادثة
+              {unreadChatCount > 0 && (
+                <span className="mr-1 px-1 bg-emerald-500 text-slate-950 text-[9px] font-black rounded-full">
+                  {unreadChatCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -910,7 +1214,13 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           {/* Two-Way Real Video Streams Grid */}
           <div className="p-3 grid grid-cols-2 gap-2 bg-slate-950 border-b border-slate-800">
             {/* Slot 1: Teacher Camera */}
-            <div className="relative aspect-video bg-slate-900 rounded-xl overflow-hidden border border-slate-700 shadow-md group">
+            <div
+              className={`relative aspect-video bg-slate-900 rounded-xl overflow-hidden border shadow-md group transition-all duration-300 ${
+                (isTeacher ? (localIsSpeaking && isMicOn) : remoteIsSpeaking)
+                  ? "border-emerald-400 ring-2 ring-emerald-400/80 shadow-emerald-500/20"
+                  : "border-slate-700"
+              }`}
+            >
               {isTeacher ? (
                 // On Teacher Screen: Show Teacher's local camera
                 isVideoOn ? (
@@ -955,14 +1265,27 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                 )
               )}
 
-              <div className="absolute bottom-1 right-1 bg-black/75 px-2 py-0.5 rounded text-[10px] font-bold text-emerald-400 flex items-center gap-1">
-                <Volume2 className="w-3 h-3 text-emerald-400" />
-                {isTeacher ? "الشيخ المنشاوي (أنت)" : (session?.halaqa?.teacher?.user?.name || "الشيخ المنشاوي")}
+              <div className="absolute bottom-1 right-1 bg-black/80 px-2 py-0.5 rounded text-[10px] font-bold text-emerald-400 flex items-center gap-1.5 backdrop-blur-sm">
+                {(isTeacher ? (localIsSpeaking && isMicOn) : remoteIsSpeaking) ? (
+                  <span className="flex items-center gap-1 text-emerald-300 animate-pulse font-black">
+                    <Radio className="w-3 h-3 text-emerald-400" />
+                    يتحدث الآن 🎙️
+                  </span>
+                ) : (
+                  <Volume2 className="w-3 h-3 text-emerald-400" />
+                )}
+                <span>{isTeacher ? "الشيخ المنشاوي (أنت)" : (session?.halaqa?.teacher?.user?.name || "الشيخ المنشاوي")}</span>
               </div>
             </div>
 
             {/* Slot 2: Student Camera */}
-            <div className="relative aspect-video bg-slate-900 rounded-xl overflow-hidden border border-slate-700 shadow-md group">
+            <div
+              className={`relative aspect-video bg-slate-900 rounded-xl overflow-hidden border shadow-md group transition-all duration-300 ${
+                (!isTeacher ? (localIsSpeaking && isMicOn) : remoteIsSpeaking)
+                  ? "border-amber-400 ring-2 ring-amber-400/80 shadow-amber-500/20"
+                  : "border-slate-700"
+              }`}
+            >
               {!isTeacher ? (
                 // On Student Screen: Show Student's local camera
                 isVideoOn ? (
@@ -1007,18 +1330,25 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                 )
               )}
 
-              <div className="absolute bottom-1 right-1 bg-black/75 px-2 py-0.5 rounded text-[10px] font-bold text-white flex items-center gap-1">
-                {isTeacher ? (
-                  hasRemoteStream ? <Mic className="w-3 h-3 text-emerald-400" /> : <MicOff className="w-3 h-3 text-slate-500" />
+              <div className="absolute bottom-1 right-1 bg-black/80 px-2 py-0.5 rounded text-[10px] font-bold text-white flex items-center gap-1.5 backdrop-blur-sm">
+                {(!isTeacher ? (localIsSpeaking && isMicOn) : remoteIsSpeaking) ? (
+                  <span className="flex items-center gap-1 text-amber-300 animate-pulse font-black">
+                    <Radio className="w-3 h-3 text-amber-400" />
+                    يرتل الآن 🎙️
+                  </span>
                 ) : (
-                  isMicOn ? <Mic className="w-3 h-3 text-emerald-400" /> : <MicOff className="w-3 h-3 text-red-400" />
+                  (!isTeacher ? isMicOn : hasRemoteStream) ? (
+                    <Mic className="w-3 h-3 text-emerald-400" />
+                  ) : (
+                    <MicOff className="w-3 h-3 text-red-400" />
+                  )
                 )}
-                {!isTeacher ? "عبد الرحمن العلي (أنت)" : (remotePeerName || "عبد الرحمن محمد العلي")}
+                <span>{!isTeacher ? "عبد الرحمن العلي (أنت)" : (remotePeerName || "عبد الرحمن محمد العلي")}</span>
               </div>
 
-              {!isTeacher && isHandRaised && (
-                <div className="absolute top-1 left-1 bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded text-[10px] font-black flex items-center gap-0.5 animate-bounce">
-                  <Hand className="w-2.5 h-2.5" /> مرفوعة
+              {((!isTeacher && isHandRaised) || (isTeacher && studentHandAlert?.visible)) && (
+                <div className="absolute top-1 left-1 bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded text-[10px] font-black flex items-center gap-0.5 animate-bounce shadow">
+                  <Hand className="w-2.5 h-2.5" /> اليد مرفوعة
                 </div>
               )}
             </div>
@@ -1037,14 +1367,22 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
               الطلاب والحضور ({studentsList.length || 1})
             </button>
             <button
-              onClick={() => setActiveTab("CHAT")}
-              className={`flex-1 py-2 text-center border-b-2 transition ${
+              onClick={() => {
+                setActiveTab("CHAT");
+                setUnreadChatCount(0);
+              }}
+              className={`flex-1 py-2 text-center border-b-2 transition relative ${
                 activeTab === "CHAT"
                   ? "border-emerald-500 text-emerald-400 font-bold bg-slate-800/40"
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              محادثة الحلقة
+              <span>محادثة الحلقة</span>
+              {unreadChatCount > 0 && (
+                <span className="mr-1.5 px-1.5 py-0.2 bg-emerald-500 text-slate-950 text-[10px] font-black rounded-full animate-bounce">
+                  {unreadChatCount}
+                </span>
+              )}
             </button>
           </div>
 
@@ -1081,8 +1419,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                   {isTeacher && (
                     <div className="flex items-center gap-1">
                       <button
-                        title="كتم الصوت"
-                        className="p-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300"
+                        onClick={handleTeacherMuteStudent}
+                        title="كتم صوت الطالب"
+                        className="p-1.5 rounded-lg bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white transition cursor-pointer"
                       >
                         <VolumeX className="w-3.5 h-3.5" />
                       </button>
@@ -1191,7 +1530,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         <div className="flex items-center gap-2">
           {!isTeacher && (
             <button
-              onClick={() => setIsHandRaised(!isHandRaised)}
+              onClick={toggleHandRaise}
               className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                 isHandRaised
                   ? "bg-amber-500 text-slate-950 shadow-lg"
