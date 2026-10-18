@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@300;400;500;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-cairo: 'Cairo', sans-serif;
+  --font-amiri: 'Amiri', serif;
+  --font-uthmanic: 'Amiri', 'Traditional Arabic', serif;
+}
+
+body {
+  font-family: var(--font-cairo);
+  direction: rtl;
+  text-align: right;
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.dark body {
+  background-color: #090d16;
+  color: #f1f5f9;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+/* Quranic frame and borders */
+.quran-frame {
+  border: 4px double #d4af37;
+  border-radius: 12px;
+  box-shadow: inset 0 0 15px rgba(212, 175, 55, 0.15), 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+.quran-text {
+  font-family: var(--font-uthmanic);
+  line-height: 2.4;
+  word-spacing: 4px;
+}
+
+/* Golden gradient accents */
+.gold-gradient-text {
+  background: linear-gradient(135deg, #d4af37 0%, #b45309 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.emerald-gradient {
+  background: linear-gradient(135deg, #064e3b 0%, #047857 100%);
+}
+
+/* Islamic Geometric background patterns */
+.islamic-pattern {
+  background-color: #ffffff;
+  background-image: radial-gradient(#064e3b 0.65px, transparent 0.65px), radial-gradient(#d4af37 0.65px, #ffffff 0.65px);
+  background-size: 26px 26px;
+  background-position: 0 0, 13px 13px;
+}
+
+.dark .islamic-pattern {
+  background-color: #0b1120;
+  background-image: radial-gradient(#10b981 0.65px, transparent 0.65px), radial-gradient(#d4af37 0.65px, #0b1120 0.65px);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

@@ -1,0 +1,326 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               String          @id @default(cuid())
+  email            String          @unique
+  name             String
+  password         String
+  role             String          // "ADMIN" | "TEACHER" | "STUDENT"
+  avatar           String?
+  phone            String?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  teacherProfile   TeacherProfile?
+  studentProfile   StudentProfile?
+  notifications    Notification[]
+  messagesSent     Message[]       @relation("MessagesSent")
+  messagesReceived Message[]       @relation("MessagesReceived")
+  auditLogs        AuditLog[]
+}
+
+model TeacherProfile {
+  id                            String    @id @default(cuid())
+  userId                        String    @unique
+  user                          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                         String    @default("الشيخ")
+  bio                           String?
+  specialties                   String?
+  allowStudentMessaging         Boolean   @default(true)
+  messagingStartHour            Int       @default(8)
+  messagingEndHour              Int       @default(22)
+  defaultAttendanceGraceMinutes Int       @default(15)
+  recordingsRetentionDays       Int       @default(30)
+  autoApproveStudents           Boolean   @default(false)
+  
+  halaqat                       Halaqa[]
+  assignments                   Assignment[]
+  evaluations                   Evaluation[]
+  memorizationRecords           MemorizationRecord[]
+}
+
+model StudentProfile {
+  id                  String               @id @default(cuid())
+  userId              String               @unique
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentNumber       String               @unique
+  guardianName        String?
+  guardianPhone       String?
+  birthDate           DateTime?
+  currentJuz          Int                  @default(1)
+  totalMemorizedAyahs Int                  @default(0)
+  totalReviewedAyahs  Int                  @default(0)
+
+  enrollments         HalaqaEnrollment[]
+  joinRequests        JoinRequest[]
+  attendances         SessionAttendance[]
+  submissions         AssignmentSubmission[]
+  memorizationRecords MemorizationRecord[]
+  evaluations         Evaluation[]
+}
+
+model Halaqa {
+  id                   String              @id @default(cuid())
+  name                 String
+  description          String?
+  teacherId            String
+  teacher              TeacherProfile      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  capacity             Int                 @default(20)
+  level                String              @default("متوسط")
+  scheduleDays         String              @default("السبت, الإثنين, الأربعاء")
+  startTime            String              @default("16:00")
+  endTime              String              @default("17:30")
+  status               String              @default("ACTIVE") // ACTIVE, UPCOMING, COMPLETED, PAUSED
+  isLiveNow            Boolean             @default(false)
+  currentLiveSessionId String?
+  createdAt            DateTime            @default(now())
+
+  enrollments          HalaqaEnrollment[]
+  joinRequests         JoinRequest[]
+  liveSessions         LiveSession[]
+  assignments          Assignment[]
+  recordings           SessionRecording[]
+  books                HalaqaBook[]
+  memorizationRecords  MemorizationRecord[]
+}
+
+model HalaqaEnrollment {
+  id           String         @id @default(cuid())
+  halaqaId     String
+  halaqa       Halaqa         @relation(fields: [halaqaId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status       String         @default("ACTIVE") // ACTIVE, SUSPENDED, DELETED
+  joinedAt     DateTime       @default(now())
+  deletedAt    DateTime?
+  deleteReason String?
+
+  @@unique([halaqaId, studentId])
+}
+
+model JoinRequest {
+  id           String         @id @default(cuid())
+  halaqaId     String
+  halaqa       Halaqa         @relation(fields: [halaqaId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status       String         @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  rejectReason String?
+  notes        String?
+  createdAt    DateTime       @default(now())
+  reviewedAt   DateTime?
+}
+
+model LiveSession {
+  id           String               @id @default(cuid())
+  halaqaId     String
+  halaqa       Halaqa               @relation(fields: [halaqaId], references: [id], onDelete: Cascade)
+  title        String
+  startedAt    DateTime             @default(now())
+  endedAt      DateTime?
+  status       String               @default("ACTIVE") // ACTIVE, ENDED
+  isRecording  Boolean              @default(false)
+  recordingUrl String?
+
+  attendances  SessionAttendance[]
+  mushafState  MushafSessionState?
+  recordings   SessionRecording[]
+  evaluations  Evaluation[]
+}
+
+model SessionAttendance {
+  id                  String         @id @default(cuid())
+  sessionId           String
+  session             LiveSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId           String
+  student             StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status              String         @default("PRESENT") // PRESENT, ABSENT, LATE, EXCUSED
+  checkInTime         DateTime?
+  checkOutTime        DateTime?
+  durationMinutes     Int            @default(0)
+  isVerifiedByTeacher Boolean        @default(false)
+  requestedCheckIn    Boolean        @default(false)
+  notes               String?
+
+  @@unique([sessionId, studentId])
+}
+
+model MushafSessionState {
+  id                  String      @id @default(cuid())
+  sessionId           String      @unique
+  session             LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  mode                String      @default("VIEW") // VIEW, TASMEE_LOCKED, GUIDED
+  currentSurah        Int         @default(1)
+  currentPage         Int         @default(1)
+  currentAyah         Int         @default(1)
+  activeStudentId     String?
+  allowFreeNavigation Boolean     @default(false)
+  highlightedAyahs    String      @default("[]") // JSON string array of numbers
+  lockedAt            DateTime?
+  updatedAt           DateTime    @updatedAt
+}
+
+model Assignment {
+  id              String                 @id @default(cuid())
+  halaqaId        String
+  halaqa          Halaqa                 @relation(fields: [halaqaId], references: [id], onDelete: Cascade)
+  teacherId       String
+  teacher         TeacherProfile         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  title           String
+  type            String                 @default("NEW_MEMORIZATION") // NEW_MEMORIZATION, REVIEW, TAJWEED, TILAWAH, EXAM, FIQH
+  surahNumber     Int?
+  startAyah       Int?
+  endAyah         Int?
+  dueDate         DateTime
+  instructions    String?
+  attachmentUrl   String?
+  targetStudentId String?
+  createdAt       DateTime               @default(now())
+
+  submissions     AssignmentSubmission[]
+}
+
+model AssignmentSubmission {
+  id                   String         @id @default(cuid())
+  assignmentId         String
+  assignment           Assignment     @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId            String
+  student              StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  submittedAt          DateTime       @default(now())
+  audioUrl             String?
+  audioDuration        Int?
+  notes                String?
+  status               String         @default("SUBMITTED") // SUBMITTED, GRADED, LATE
+  grade                Float?
+  teacherFeedback      String?
+  teacherAudioFeedback String?
+
+  @@unique([assignmentId, studentId])
+}
+
+model MemorizationRecord {
+  id                 String         @id @default(cuid())
+  studentId          String
+  student            StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId          String
+  teacher            TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  halaqaId           String
+  halaqa             Halaqa         @relation(fields: [halaqaId], references: [id], onDelete: Cascade)
+  date               DateTime       @default(now())
+  surahNumber        Int
+  startAyah          Int
+  endAyah            Int
+  recordType         String         @default("NEW_MEMORIZATION") // NEW_MEMORIZATION, REVIEW
+  mistakesCount      Int            @default(0)
+  alertsCount        Int            @default(0)
+  tajweedLevel       String         @default("ممتاز")
+  memorizationScore  Float          @default(100.0)
+  isCompletedSurah   Boolean        @default(false)
+  notes              String?
+}
+
+model Evaluation {
+  id                 String          @id @default(cuid())
+  sessionId          String?
+  session            LiveSession?    @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  studentId          String
+  student            StudentProfile  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId          String
+  teacher            TeacherProfile  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  date               DateTime        @default(now())
+  score              Float           @default(100.0)
+  gradeLabel         String          @default("ممتاز")
+  tajweedScore       Float           @default(100.0)
+  memorizationScore  Float           @default(100.0)
+  mannerScore        Float           @default(100.0)
+  notes              String?
+  nextAssignmentText String?
+}
+
+model LibraryBook {
+  id                 String       @id @default(cuid())
+  title              String
+  author             String?
+  category           String       @default("أحكام التجويد")
+  fileUrl            String
+  coverUrl           String?
+  description        String?
+  pagesCount         Int          @default(10)
+  uploadedBy         String
+  createdAt          DateTime     @default(now())
+
+  halaqaAssignments  HalaqaBook[]
+}
+
+model HalaqaBook {
+  id       String      @id @default(cuid())
+  halaqaId String
+  halaqa   Halaqa      @relation(fields: [halaqaId], references: [id], onDelete: Cascade)
+  bookId   String
+  book     LibraryBook @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([halaqaId, bookId])
+}
+
+model SessionRecording {
+  id                   String      @id @default(cuid())
+  sessionId            String
+  session              LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  halaqaId             String
+  halaqa               Halaqa      @relation(fields: [halaqaId], references: [id], onDelete: Cascade)
+  title                String
+  videoUrl             String
+  durationSeconds      Int         @default(3600)
+  fileSizeBytes        Int         @default(150000000)
+  retentionDays        Int         @default(30)
+  expiresAt            DateTime
+  allowStudentDownload Boolean     @default(false)
+  createdAt            DateTime    @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String   @default("SYSTEM")
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  sender     User     @relation("MessagesSent", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User     @relation("MessagesReceived", fields: [receiverId], references: [id], onDelete: Cascade)
+  content    String
+  createdAt  DateTime @default(now())
+  isRead     Boolean  @default(false)
+}
+
+model PlatformSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  details   String?
+  ip        String?
+  createdAt DateTime @default(now())
+}
