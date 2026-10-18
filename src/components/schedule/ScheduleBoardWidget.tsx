@@ -122,38 +122,26 @@ export function ScheduleBoardWidget({
     time: string;
   } | null>(null);
 
-  // Student Join Request modal state
-  const [joinModal, setJoinModal] = useState<{ isOpen: boolean; halaqa: any | null }>({
-    isOpen: false,
-    halaqa: null,
-  });
-  const [joinNotes, setJoinNotes] = useState("");
-  const [submittingJoin, setSubmittingJoin] = useState(false);
+  // Student 1-Click Direct Join Request
+  const [requestingHalaqaId, setRequestingHalaqaId] = useState<string | null>(null);
 
-  const handleOpenJoinModal = (h: any) => {
-    setJoinModal({ isOpen: true, halaqa: h });
-    setJoinNotes("");
-  };
-
-  const handleSendJoin = async () => {
-    if (!joinModal.halaqa) return;
-    setSubmittingJoin(true);
+  const handleDirectJoin = async (h: ScheduleHalaqa) => {
+    setRequestingHalaqaId(h.id);
     try {
       const res = await fetch("/api/student/join-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          halaqaId: joinModal.halaqa.id,
-          notes: joinNotes,
+          halaqaId: h.id,
+          sessionId: h.currentLiveSessionId,
         }),
       });
 
       if (res.ok) {
-        setJoinModal({ isOpen: false, halaqa: null });
         setAlertToast({
           visible: true,
           title: "✉️ تم إرسال طلب الانضمام",
-          message: `تم رفع طلبك للانضمام إلى: ${joinModal.halaqa.name} إلى فضيلة الشيخ، وهو قيد المراجعة والاعتماد.`,
+          message: `تم رفع طلبك للانضمام إلى: ${h.name} لفضيلة الشيخ، في انتظار القبول.`,
           time: new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
         });
         fetchSchedule();
@@ -165,7 +153,7 @@ export function ScheduleBoardWidget({
       console.error(err);
       alert("حدث خطأ أثناء إرسال طلب الانضمام");
     } finally {
-      setSubmittingJoin(false);
+      setRequestingHalaqaId(null);
     }
   };
 
@@ -194,6 +182,7 @@ export function ScheduleBoardWidget({
       if (
         lastEvent.type === "SCHEDULE_UPDATED" ||
         lastEvent.type === "JOIN_REQUEST_APPROVED" ||
+        lastEvent.type === "SESSION_JOIN_APPROVED" ||
         lastEvent.type === "JOIN_REQUEST_REJECTED"
       ) {
         const payload = lastEvent.payload;
@@ -213,9 +202,12 @@ export function ScheduleBoardWidget({
         let alertTitle = "🔔 تحديث في جدول المواعيد";
         let alertMessage = payload?.message || "قام فضيلة الشيخ بتحديث جدول الحلقات والمواعيد.";
 
-        if (lastEvent.type === "JOIN_REQUEST_APPROVED") {
+        if (
+          lastEvent.type === "JOIN_REQUEST_APPROVED" ||
+          lastEvent.type === "SESSION_JOIN_APPROVED"
+        ) {
           alertTitle = "🎉 تم قبول طلب انضمامك!";
-          alertMessage = `وافق فضيلة الشيخ على انضمامك إلى: ${payload?.halaqaName || "الحلقة القرآنية"}. تم اعتمادك ويمكنك دخول الجلسة الآن!`;
+          alertMessage = `وافق فضيلة الشيخ على انضمامك إلى: ${payload?.halaqaName || "الحلقة القرآنية"}. تم اعتمادك ويمكنك متابعة الحلقة الآن!`;
         } else if (lastEvent.type === "JOIN_REQUEST_REJECTED") {
           alertTitle = "ℹ️ تحديث بشأن طلب الانضمام";
           alertMessage = `اعتذر فضيلة الشيخ عن قبول الانضمام إلى: ${payload?.halaqaName || "الحلقة القرآنية"}.`;
@@ -605,70 +597,34 @@ export function ScheduleBoardWidget({
                             </button>
                           </>
                         ) : (
-                          <div className="flex items-center gap-1.5 flex-wrap">
+                          <div className="flex items-center">
                             {h.studentStatus === "ENROLLED" ? (
-                              <>
-                                {/* 1. Enter Room Button (دخول الحلقة) - Only for approved students */}
-                                <Link
-                                  href={`/classroom/${h.currentLiveSessionId || h.id}?role=student`}
-                                  className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-xs transition active:scale-95"
-                                  title="دخول قاعة الحلقة الآن (طالب معتمد ومقبول)"
-                                >
-                                  <Video className="w-3.5 h-3.5" />
-                                  <span>دخول الحلقة</span>
-                                </Link>
-
-                                {/* 2. Follow / Track Halaqa (متابعة الحلقة) */}
-                                <Link
-                                  href="/student/my-halaqat"
-                                  className="inline-flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-[11px] px-2 py-1.5 rounded-lg border border-amber-500/30 transition"
-                                  title="متابعة تفاصيل وجدول الحلقة"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>متابعة الحلقة</span>
-                                </Link>
-                              </>
+                              <Link
+                                href={`/classroom/${h.currentLiveSessionId || h.id}?role=student`}
+                                className="inline-flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow-md transition-transform hover:scale-105 active:scale-95"
+                                title="متابعة الحلقة (طالب معتمد)"
+                              >
+                                <Video className="w-3.5 h-3.5" />
+                                <span>متابعة الحلقة 🎥</span>
+                              </Link>
                             ) : h.studentStatus === "PENDING" ? (
-                              <>
-                                {/* Pending approval notice */}
-                                <span
-                                  className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold text-[10px] px-2.5 py-1.5 rounded-lg border border-amber-500/30"
-                                  title="طلبك قيد المراجعة لدى فضيلة الشيخ"
-                                >
-                                  <Clock className="w-3 h-3 text-amber-600 animate-spin" />
-                                  <span>في انتظار موافقة الشيخ</span>
-                                </span>
-
-                                <Link
-                                  href="/student/my-halaqat"
-                                  className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[11px] px-2 py-1.5 rounded-lg transition"
-                                  title="متابعة تفاصيل الطلب"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>متابعة</span>
-                                </Link>
-                              </>
+                              <span
+                                className="inline-flex items-center gap-1.5 bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold text-xs px-3.5 py-2 rounded-xl border border-amber-500/30"
+                                title="طلبك قيد المراجعة لدى فضيلة الشيخ"
+                              >
+                                <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                                <span>في انتظار قبول الشيخ ⏳</span>
+                              </span>
                             ) : (
-                              <>
-                                {/* Conditioned Join Request button */}
-                                <button
-                                  onClick={() => handleOpenJoinModal(h)}
-                                  className="inline-flex items-center gap-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-xs transition active:scale-95"
-                                  title="طلب الانضمام (مشروط بقبول وموافقة فضيلة الشيخ)"
-                                >
-                                  <UserPlus className="w-3.5 h-3.5" />
-                                  <span>طلب انضمام (بموافقة الشيخ)</span>
-                                </button>
-
-                                <Link
-                                  href="/student/my-halaqat"
-                                  className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[11px] px-2 py-1.5 rounded-lg transition"
-                                  title="متابعة تفاصيل وجدول الحلقة"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>متابعة</span>
-                                </Link>
-                              </>
+                              <button
+                                onClick={() => handleDirectJoin(h)}
+                                disabled={requestingHalaqaId === h.id}
+                                className="inline-flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
+                                title="طلب الانضمام إلى الحلقة"
+                              >
+                                <UserPlus className="w-3.5 h-3.5" />
+                                <span>{requestingHalaqaId === h.id ? "جارٍ إرسال الطلب..." : "طلب انضمام"}</span>
+                              </button>
                             )}
                           </div>
                         )}
@@ -868,87 +824,6 @@ export function ScheduleBoardWidget({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Student Join Request Modal */}
-      {joinModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                    طلب انضمام إلى الحلقة
-                  </h3>
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
-                    مشروط بموافقة وقبول فضيلة الشيخ
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setJoinModal({ isOpen: false, halaqa: null })}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-1 text-xs">
-              <div className="font-bold text-slate-800 dark:text-slate-200">
-                {joinModal.halaqa?.name}
-              </div>
-              {joinModal.halaqa?.teacher?.user?.name && (
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  فضيلة الشيخ: {joinModal.halaqa.teacher.user.name}
-                </div>
-              )}
-              <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                المواعيد: {joinModal.halaqa?.scheduleDays} ({joinModal.halaqa?.startTime} - {joinModal.halaqa?.endTime})
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                رسالة أو نبذة لفضيلة الشيخ عن مستواك القرآي:
-              </label>
-              <textarea
-                rows={3}
-                value={joinNotes}
-                onChange={(e) => setJoinNotes(e.target.value)}
-                placeholder="مثال: أحفظ 3 أجزاء وأود التسميع والالتزام بمواعيد الحلقة إن شاء الله..."
-                className="w-full text-xs p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-slate-100 resize-none"
-              />
-            </div>
-
-            <div className="pt-2 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setJoinModal({ isOpen: false, halaqa: null })}
-                className="text-xs font-bold px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={handleSendJoin}
-                disabled={submittingJoin}
-                className="text-xs font-bold px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white shadow-md transition active:scale-95 flex items-center gap-1.5"
-              >
-                {submittingJoin ? (
-                  "جارٍ الإرسال..."
-                ) : (
-                  <>
-                    <UserPlus className="w-4 h-4" />
-                    <span>إرسال طلب الانضمام للشيخ</span>
-                  </>
-                )}
-              </button>
-            </div>
           </div>
         </div>
       )}

@@ -94,7 +94,9 @@ export interface RealtimeEvent {
     | "SCHEDULE_UPDATED"
     | "JOIN_REQUEST_SUBMITTED"
     | "JOIN_REQUEST_APPROVED"
-    | "JOIN_REQUEST_REJECTED";
+    | "JOIN_REQUEST_REJECTED"
+    | "SESSION_JOIN_REQUESTED"
+    | "SESSION_JOIN_APPROVED";
   payload: any;
   senderId?: string;
   channel?: string;

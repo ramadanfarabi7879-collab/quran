@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { Navbar } from "./Navbar";
 import { Sidebar } from "./Sidebar";
 import { useAuth, useRealtime } from "@/components/providers/AppProviders";
-import { playHalaqaStartSound } from "@/lib/sound";
 import {
   LayoutDashboard,
   BookOpen,
@@ -17,7 +16,15 @@ import {
   Radio,
   X,
   Volume2,
+  UserCheck,
+  CheckCircle2,
+  Bell,
+  Clock,
+  Sparkles,
+  ShieldCheck,
+  UserPlus,
 } from "lucide-react";
+import { playHalaqaStartSound, playTeacherJoinAlertSound, playStudentApprovedSound } from "@/lib/sound";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -31,7 +38,32 @@ export function AppShell({ children }: { children: ReactNode }) {
     halaqaName: string;
     teacherName: string;
     title?: string;
+    approvalStatus?: "APPROVED" | "PENDING" | "NOT_REQUESTED";
   } | null>(null);
+
+  // Sheikh Real-time Floating Join Request Notification
+  const [teacherJoinToast, setTeacherJoinToast] = useState<{
+    visible: boolean;
+    requestId?: string;
+    sessionId?: string;
+    halaqaId?: string;
+    halaqaName?: string;
+    studentId?: string;
+    studentName?: string;
+    studentAvatar?: string;
+    time?: string;
+    isAccepting?: boolean;
+    accepted?: boolean;
+  } | null>(null);
+
+  // Student Real-time Floating Approval Toast
+  const [studentApprovalToast, setStudentApprovalToast] = useState<{
+    visible: boolean;
+    message: string;
+    sessionId?: string;
+  } | null>(null);
+
+  const [requestingJoin, setRequestingJoin] = useState(false);
 
   const isStudent = user?.role === "STUDENT" || pathname.startsWith("/student");
   const isTeacher = user?.role === "TEACHER" || pathname.startsWith("/teacher");
@@ -47,9 +79,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, [pathname, user, loading]);
 
-  // Realtime notification listener: plays sound and pops up modal for student
+  // Realtime notification listener
   useEffect(() => {
-    if (lastEvent && lastEvent.type === "HALAQA_LIVE_STARTED") {
+    if (!lastEvent) return;
+
+    // 1. Session started
+    if (lastEvent.type === "HALAQA_LIVE_STARTED") {
       const payload = lastEvent.payload;
       if (isStudent) {
         playHalaqaStartSound();
@@ -59,15 +94,101 @@ export function AppShell({ children }: { children: ReactNode }) {
           halaqaName: payload?.halaqaName || "حلقة الفجر والتحفيظ والتجويد",
           teacherName: payload?.teacherName || "الشيخ أحمد المنشاوي",
           title: payload?.title,
+          approvalStatus: "NOT_REQUESTED",
         });
       }
     }
-  }, [lastEvent, isStudent]);
 
-  // Fallback 3-second check for active live sessions for student
+    // 2. Student clicked "طلب انضمام" -> Alert Teacher immediately!
+    if (lastEvent.type === "SESSION_JOIN_REQUESTED" || lastEvent.type === "JOIN_REQUEST_SUBMITTED") {
+      const p = lastEvent.payload;
+      if (isTeacher) {
+        playTeacherJoinAlertSound();
+        setTeacherJoinToast({
+          visible: true,
+          requestId: p.requestId,
+          sessionId: p.sessionId,
+          halaqaId: p.halaqaId,
+          halaqaName: p.halaqaName || "الحلقة القرآنية",
+          studentId: p.studentId,
+          studentName: p.studentName || "طالب العلم",
+          studentAvatar: p.studentAvatar,
+          time: p.time || new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+          isAccepting: false,
+          accepted: false,
+        });
+      }
+    }
+
+    // 3. Sheikh clicked "قبول ودخول" -> Alert Student screen immediately!
+    if (lastEvent.type === "SESSION_JOIN_APPROVED" || lastEvent.type === "JOIN_REQUEST_APPROVED") {
+      const p = lastEvent.payload;
+      if (isStudent) {
+        playStudentApprovedSound();
+        setStudentApprovalToast({
+          visible: true,
+          message: p.message || "وافق فضيلة الشيخ على طلب انضمامك للحلقة المباركة",
+          sessionId: p.sessionId,
+        });
+        if (liveModal) {
+          setLiveModal((prev) => prev ? { ...prev, approvalStatus: "APPROVED" } : null);
+        }
+        setTimeout(() => setStudentApprovalToast(null), 6000);
+      }
+    }
+  }, [lastEvent, isStudent, isTeacher, liveModal]);
+
+  // Sheikh 1-Click Accept Handler
+  const handleTeacher1ClickAccept = async () => {
+    if (!teacherJoinToast) return;
+    setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: true } : null));
+    try {
+      const res = await fetch("/api/teacher/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ACCEPT_JOIN_SESSION",
+          sessionId: teacherJoinToast.sessionId,
+          halaqaId: teacherJoinToast.halaqaId,
+          studentId: teacherJoinToast.studentId,
+          requestId: teacherJoinToast.requestId,
+        }),
+      });
+
+      if (res.ok) {
+        setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false, accepted: true } : null));
+        setTimeout(() => setTeacherJoinToast(null), 3000);
+      } else {
+        alert("فشل تأكيد القبول");
+        setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false } : null));
+      }
+    } catch {
+      setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false } : null));
+    }
+  };
+
+  // Student 1-Click Request Join Handler
+  const handleStudent1ClickJoin = async (sessionId?: string) => {
+    setRequestingJoin(true);
+    try {
+      const res = await fetch("/api/student/join-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sessionId || liveModal?.sessionId,
+        }),
+      });
+      if (res.ok) {
+        setLiveModal((prev) => (prev ? { ...prev, approvalStatus: "PENDING" } : null));
+      }
+    } catch {} finally {
+      setRequestingJoin(false);
+    }
+  };
+
+  // Fallback check for active live sessions for student
   useEffect(() => {
     if (!isStudent) return;
-
     let dismissedSessionId = "";
 
     const checkActive = async () => {
@@ -77,17 +198,22 @@ export function AppShell({ children }: { children: ReactNode }) {
           const data = await res.json();
           if (data.session && data.session.status === "ACTIVE") {
             const sess = data.session;
+            const status = data.authorizationStatus === "AUTHORIZED"
+              ? "APPROVED"
+              : data.authorizationStatus === "PENDING_APPROVAL"
+              ? "PENDING"
+              : "NOT_REQUESTED";
+
             if (sess.id !== dismissedSessionId && (!liveModal || !liveModal.open)) {
               setLiveModal((prev) => {
                 if (prev?.open && prev.sessionId === sess.id) return prev;
-                // If not open yet, play sound and open modal
-                playHalaqaStartSound();
                 return {
                   open: true,
                   sessionId: sess.id,
                   halaqaName: sess.halaqa?.name || "حلقة الفجر والتحفيظ والتجويد",
                   teacherName: sess.halaqa?.teacher?.user?.name || "الشيخ أحمد المنشاوي",
                   title: sess.title,
+                  approvalStatus: status,
                 };
               });
             }
@@ -97,7 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
 
     checkActive();
-    const interval = setInterval(checkActive, 3500);
+    const interval = setInterval(checkActive, 5000);
     return () => clearInterval(interval);
   }, [isStudent, liveModal]);
 
@@ -107,6 +233,98 @@ export function AppShell({ children }: { children: ReactNode }) {
         pathname.includes("/mushaf") ? "h-screen overflow-hidden" : "min-h-screen"
       }`}
     >
+      {/* 1. Sheikh Real-Time Floating Join Request Alert with 1-Click Accept */}
+      {teacherJoinToast?.visible && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-lg w-[92%] sm:w-full animate-in slide-in-from-top-4 duration-300">
+          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950 text-white rounded-3xl p-4 sm:p-5 shadow-2xl border-2 border-emerald-500/70 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <img
+                  src={
+                    teacherJoinToast.studentAvatar ||
+                    "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150"
+                  }
+                  alt={teacherJoinToast.studentName}
+                  className="w-11 h-11 rounded-2xl object-cover ring-2 ring-emerald-400"
+                />
+                <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-950 flex items-center justify-center">
+                  <Bell className="w-2.5 h-2.5 text-white" />
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-black text-amber-300 uppercase tracking-wider block">
+                  🔔 طلب انضمام للحلقة الآن
+                </span>
+                <h4 className="font-black text-sm text-white">
+                  الطالب: {teacherJoinToast.studentName}
+                </h4>
+                <p className="text-[11px] text-slate-300">
+                  يرغب في الانضمام إلى: {teacherJoinToast.halaqaName}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {teacherJoinToast.accepted ? (
+                <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>تم القبول والدخول ✅</span>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={handleTeacher1ClickAccept}
+                    disabled={teacherJoinToast.isAccepting}
+                    className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    <span>{teacherJoinToast.isAccepting ? "جارٍ القبول..." : "قبول ودخول ✅"}</span>
+                  </button>
+                  <button
+                    onClick={() => setTeacherJoinToast(null)}
+                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition"
+                    title="تجاهل"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Student Real-Time Floating Approval Toast */}
+      {studentApprovalToast?.visible && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] sm:w-full animate-in slide-in-from-top-4 duration-300">
+          <div className="bg-gradient-to-r from-emerald-700 via-emerald-800 to-teal-800 text-white rounded-3xl p-4 shadow-2xl border-2 border-emerald-300 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-6 h-6 text-amber-300" />
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-black text-amber-300 uppercase tracking-wider block">
+                  موافقة الشيخ والاعتماد
+                </span>
+                <p className="text-xs font-bold text-white">
+                  {studentApprovalToast.message}
+                </p>
+              </div>
+            </div>
+
+            {studentApprovalToast.sessionId && (
+              <Link
+                href={`/classroom/${studentApprovalToast.sessionId}?role=student`}
+                className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow transition shrink-0 flex items-center gap-1"
+              >
+                <Video className="w-3.5 h-3.5" />
+                <span>متابعة الحلقة 🎥</span>
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
       <Navbar onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)} />
 
       <div className="flex-1 flex overflow-hidden">
@@ -129,7 +347,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation Bar (Sticky Thumb Access on Phones) */}
+      {/* Mobile Bottom Navigation Bar */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 flex items-center justify-around py-2 px-1 shadow-lg">
         <Link
           href={isTeacher ? "/teacher/dashboard" : "/student/dashboard"}
@@ -192,7 +410,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       {liveModal?.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full border-2 border-emerald-500/50 shadow-2xl overflow-hidden p-6 relative text-center">
-            {/* Close button */}
             <button
               onClick={() => setLiveModal(null)}
               className="absolute top-4 left-4 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition"
@@ -201,7 +418,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <X className="w-5 h-5" />
             </button>
 
-            {/* Glowing Icon */}
             <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center mb-4 shadow-xl ring-4 ring-emerald-400/20 animate-bounce">
               <Video className="w-8 h-8" />
             </div>
@@ -218,15 +434,32 @@ export function AppShell({ children }: { children: ReactNode }) {
               المعلم <strong className="text-emerald-600 dark:text-emerald-400">{liveModal.teacherName}</strong> في انتظارك الآن في الغرفة الافتراضية
             </p>
 
+            {/* Single Dynamic Action Button */}
             <div className="flex flex-col gap-2.5">
-              <Link
-                href={`/classroom/${liveModal.sessionId}?role=student`}
-                onClick={() => setLiveModal(null)}
-                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm shadow-lg shadow-emerald-600/30 transition active:scale-95 flex items-center justify-center gap-2"
-              >
-                <Video className="w-4 h-4" />
-                انضم الآن للغرفة الافتراضية
-              </Link>
+              {liveModal.approvalStatus === "APPROVED" ? (
+                <Link
+                  href={`/classroom/${liveModal.sessionId}?role=student`}
+                  onClick={() => setLiveModal(null)}
+                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black text-sm shadow-lg transition active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <Video className="w-4 h-4" />
+                  متابعة الحلقة 🎥
+                </Link>
+              ) : liveModal.approvalStatus === "PENDING" ? (
+                <div className="w-full py-3.5 px-4 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-600 animate-spin" />
+                  في انتظار قبول الشيخ ⏳
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleStudent1ClickJoin(liveModal.sessionId)}
+                  disabled={requestingJoin}
+                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-sm shadow-lg transition active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  {requestingJoin ? "جارٍ إرسال الطلب للشيخ..." : "طلب انضمام"}
+                </button>
+              )}
 
               <button
                 onClick={() => setLiveModal(null)}

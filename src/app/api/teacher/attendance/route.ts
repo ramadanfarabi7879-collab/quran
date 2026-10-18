@@ -126,7 +126,138 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, attendance });
     }
 
-    // Action 2: Teacher manual verification or update
+    // Action 2: Teacher 1-click accept join request for this session
+    if (action === "ACCEPT_JOIN_SESSION") {
+      let resolvedStudentId = studentId;
+      if (!resolvedStudentId && body.requestId) {
+        const reqItem = await prisma.joinRequest.findUnique({
+          where: { id: body.requestId },
+        });
+        resolvedStudentId = reqItem?.studentId;
+      }
+
+      if (!resolvedStudentId) {
+        return NextResponse.json({ error: "معرف الطالب مفقود" }, { status: 400 });
+      }
+
+      // If sessionId is not provided, look for active session for halaqaId
+      let resolvedSessionId = sessionId;
+      if (!resolvedSessionId && body.halaqaId) {
+        const activeSess = await prisma.liveSession.findFirst({
+          where: { halaqaId: body.halaqaId, status: "ACTIVE" },
+        });
+        resolvedSessionId = activeSess?.id;
+      }
+
+      let updatedAttendance = null;
+      if (resolvedSessionId) {
+        updatedAttendance = await prisma.sessionAttendance.upsert({
+          where: {
+            sessionId_studentId: {
+              sessionId: resolvedSessionId,
+              studentId: resolvedStudentId,
+            },
+          },
+          update: {
+            status: "PRESENT",
+            isVerifiedByTeacher: true,
+            requestedCheckIn: true,
+            checkInTime: new Date(),
+          },
+          create: {
+            sessionId: resolvedSessionId,
+            studentId: resolvedStudentId,
+            status: "PRESENT",
+            isVerifiedByTeacher: true,
+            requestedCheckIn: true,
+            checkInTime: new Date(),
+          },
+          include: {
+            student: { include: { user: true } },
+            session: { include: { halaqa: true } },
+          },
+        });
+      }
+
+      // Also mark JoinRequest as ACCEPTED
+      const studentProfile = await prisma.studentProfile.findUnique({
+        where: { id: resolvedStudentId },
+        include: { user: true },
+      });
+
+      const targetHalaqaId = body.halaqaId || updatedAttendance?.session?.halaqaId;
+      if (targetHalaqaId) {
+        await prisma.joinRequest.updateMany({
+          where: {
+            halaqaId: targetHalaqaId,
+            studentId: resolvedStudentId,
+            status: "PENDING",
+          },
+          data: {
+            status: "ACCEPTED",
+            reviewedAt: new Date(),
+          },
+        });
+
+        await prisma.halaqaEnrollment.upsert({
+          where: {
+            halaqaId_studentId: {
+              halaqaId: targetHalaqaId,
+              studentId: resolvedStudentId,
+            },
+          },
+          update: { status: "ACTIVE", deletedAt: null },
+          create: {
+            halaqaId: targetHalaqaId,
+            studentId: resolvedStudentId,
+            status: "ACTIVE",
+          },
+        });
+      }
+
+      // Broadcast to student
+      const approvalPayload = {
+        sessionId: resolvedSessionId,
+        halaqaId: targetHalaqaId,
+        studentId: resolvedStudentId,
+        studentUserId: studentProfile?.user?.id,
+        studentName: studentProfile?.user?.name,
+        message: "تم قبول انضمامك إلى الحلقة بواسطة فضيلة الشيخ",
+      };
+
+      realtimeHub.broadcast("global", {
+        type: "SESSION_JOIN_APPROVED",
+        payload: approvalPayload,
+      });
+
+      realtimeHub.broadcast("global", {
+        type: "JOIN_REQUEST_APPROVED",
+        payload: approvalPayload,
+      });
+
+      realtimeHub.broadcast("global", {
+        type: "SCHEDULE_UPDATED",
+        payload: {
+          action: "STUDENT_APPROVED",
+          studentId: resolvedStudentId,
+        },
+      });
+
+      if (resolvedSessionId) {
+        realtimeHub.broadcast(`session-${resolvedSessionId}`, {
+          type: "STUDENT_ATTENDANCE_VERIFIED",
+          payload: {
+            sessionId: resolvedSessionId,
+            studentId: resolvedStudentId,
+            status: "PRESENT",
+          },
+        });
+      }
+
+      return NextResponse.json({ success: true, attendance: updatedAttendance });
+    }
+
+    // Action 3: Teacher manual verification or update
     if (user.role === "STUDENT") {
       return NextResponse.json({ error: "غير مصرح بتعديل الحضور" }, { status: 403 });
     }

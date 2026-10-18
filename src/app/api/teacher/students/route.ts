@@ -125,6 +125,48 @@ export async function POST(req: Request) {
         },
       });
 
+      // If there is an active live session for this halaqa, mark session attendance as verified
+      const activeSession = await prisma.liveSession.findFirst({
+        where: { halaqaId: request.halaqaId, status: "ACTIVE" },
+      });
+
+      if (activeSession) {
+        await prisma.sessionAttendance.upsert({
+          where: {
+            sessionId_studentId: {
+              sessionId: activeSession.id,
+              studentId: request.studentId,
+            },
+          },
+          update: {
+            status: "PRESENT",
+            isVerifiedByTeacher: true,
+            requestedCheckIn: true,
+            checkInTime: new Date(),
+          },
+          create: {
+            sessionId: activeSession.id,
+            studentId: request.studentId,
+            status: "PRESENT",
+            isVerifiedByTeacher: true,
+            requestedCheckIn: true,
+            checkInTime: new Date(),
+          },
+        });
+
+        realtimeHub.broadcast("global", {
+          type: "SESSION_JOIN_APPROVED",
+          payload: {
+            sessionId: activeSession.id,
+            halaqaId: request.halaqaId,
+            studentId: request.studentId,
+            studentUserId: request.student.user.id,
+            studentName: request.student.user.name,
+            message: `تم قبول انضمامك إلى ${request.halaqa.name} بواسطة فضيلة الشيخ`,
+          },
+        });
+      }
+
       // Notification
       await prisma.notification.create({
         data: {
@@ -132,7 +174,7 @@ export async function POST(req: Request) {
           title: "تم قبول طلب انضمامك للحلقة",
           body: `مرحباً بك! قبل المعلم انضمامك إلى: ${request.halaqa.name}.`,
           type: "JOIN_REQUEST_DECIDED",
-          link: "/student/my-halaqat",
+          link: activeSession ? `/classroom/${activeSession.id}?role=student` : "/student/my-halaqat",
         },
       });
 
@@ -140,6 +182,7 @@ export async function POST(req: Request) {
       realtimeHub.broadcast("global", {
         type: "JOIN_REQUEST_APPROVED",
         payload: {
+          sessionId: activeSession?.id,
           studentId: request.studentId,
           studentUserId: request.student.user.id,
           halaqaId: request.halaqaId,

@@ -112,11 +112,38 @@ export default function StudentDashboard() {
       } else if (lastEvent.type === "HALAQA_LIVE_ENDED") {
         setActiveSession(null);
         setLiveModal(null);
-      } else if (lastEvent.type === "SCHEDULE_UPDATED") {
+      } else if (
+        lastEvent.type === "SCHEDULE_UPDATED" ||
+        lastEvent.type === "SESSION_JOIN_APPROVED" ||
+        lastEvent.type === "JOIN_REQUEST_APPROVED"
+      ) {
         fetchData();
       }
     }
   }, [lastEvent]);
+
+  const [requestingSession, setRequestingSession] = useState(false);
+
+  const handleStudent1ClickJoin = async (sessionId?: string, halaqaId?: string) => {
+    setRequestingSession(true);
+    try {
+      const res = await fetch("/api/student/join-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sessionId || activeSession?.id,
+          halaqaId: halaqaId || activeSession?.halaqaId,
+        }),
+      });
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRequestingSession(false);
+    }
+  };
 
   const profile = user?.studentProfile || {
     currentJuz: 3,
@@ -177,32 +204,24 @@ export default function StudentDashboard() {
                       setLiveModal(null);
                       window.location.href = `/classroom/${liveModal.sessionId}?role=student`;
                     }}
-                    className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 hover:to-gold-accent text-slate-950 font-black px-6 py-3.5 rounded-2xl text-sm shadow-xl transition-transform hover:scale-105 active:scale-95"
+                    className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black px-6 py-3.5 rounded-2xl text-sm shadow-xl transition-transform hover:scale-105 active:scale-95"
                   >
                     <Video className="w-5 h-5" />
-                    انضم للجلسة مباشرة الآن (معتمد)
+                    متابعة الحلقة 🎥
                   </button>
                 ) : isActiveSessionPending ? (
-                  <button
-                    onClick={() => {
-                      setLiveModal(null);
-                      window.location.href = "/student/my-halaqat";
-                    }}
-                    className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-6 py-3.5 rounded-2xl text-sm shadow-xl transition-transform hover:scale-105 active:scale-95"
-                  >
-                    <Clock className="w-5 h-5" />
-                    طلبك قيد موافقة الشيخ ⏳
-                  </button>
+                  <div className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold px-6 py-3.5 rounded-2xl text-sm">
+                    <Clock className="w-5 h-5 text-amber-400 animate-spin" />
+                    في انتظار قبول الشيخ ⏳
+                  </div>
                 ) : (
                   <button
-                    onClick={() => {
-                      setLiveModal(null);
-                      window.location.href = "/student/my-halaqat";
-                    }}
-                    className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-black px-6 py-3.5 rounded-2xl text-sm shadow-xl transition-transform hover:scale-105 active:scale-95"
+                    onClick={() => handleStudent1ClickJoin(liveModal.sessionId)}
+                    disabled={requestingSession}
+                    className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black px-6 py-3.5 rounded-2xl text-sm shadow-xl transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
                   >
-                    <Lock className="w-5 h-5" />
-                    طلب انضمام (مشروط بموافقة الشيخ)
+                    <UserPlus className="w-5 h-5" />
+                    {requestingSession ? "جارٍ إرسال الطلب..." : "طلب انضمام"}
                   </button>
                 )}
 
@@ -245,7 +264,7 @@ export default function StudentDashboard() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => playHalaqaStartSound()}
                 title="إعادة سماع نغمة التنبيه"
@@ -254,39 +273,30 @@ export default function StudentDashboard() {
                 <Volume2 className="w-4 h-4 text-amber-300" />
               </button>
 
+              {/* Single Dynamic Action Button for Active Live Session */}
               {isActiveSessionApproved ? (
                 <Link
                   href={`/classroom/${activeSession.id}?role=student`}
-                  className="flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-3 rounded-2xl text-xs shadow-lg transition-transform hover:scale-105"
+                  className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black px-5 py-3 rounded-2xl text-xs shadow-lg transition-transform hover:scale-105"
                 >
                   <Video className="w-4 h-4" />
-                  دخول الحلقة الآن (معتمد)
+                  متابعة الحلقة 🎥
                 </Link>
               ) : isActiveSessionPending ? (
-                <Link
-                  href="/student/my-halaqat"
-                  className="flex items-center gap-2 bg-amber-500/20 text-amber-200 border border-amber-400/40 font-bold px-4 py-3 rounded-2xl text-xs transition"
-                >
-                  <Clock className="w-4 h-4" />
-                  في انتظار موافقة الشيخ ⏳
-                </Link>
+                <div className="flex items-center gap-2 bg-amber-500/20 text-amber-200 border border-amber-400/40 font-bold px-4 py-3 rounded-2xl text-xs">
+                  <Clock className="w-4 h-4 text-amber-400 animate-spin" />
+                  في انتظار قبول الشيخ ⏳
+                </div>
               ) : (
-                <Link
-                  href="/student/my-halaqat"
-                  className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white font-black px-5 py-3 rounded-2xl text-xs shadow-lg transition-transform hover:scale-105"
+                <button
+                  onClick={() => handleStudent1ClickJoin(activeSession.id, activeSession.halaqaId)}
+                  disabled={requestingSession}
+                  className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-black px-5 py-3 rounded-2xl text-xs shadow-lg transition-transform hover:scale-105 disabled:opacity-50"
                 >
-                  <Lock className="w-4 h-4" />
-                  طلب انضمام (مشروط بالقبول)
-                </Link>
+                  <UserPlus className="w-4 h-4" />
+                  {requestingSession ? "جارٍ إرسال الطلب..." : "طلب انضمام"}
+                </button>
               )}
-
-              <Link
-                href="/student/my-halaqat"
-                className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white font-bold px-4 py-3 rounded-2xl text-xs border border-white/20 transition"
-              >
-                <Eye className="w-4 h-4" />
-                متابعة الحلقة
-              </Link>
             </div>
           </div>
         )}
@@ -307,57 +317,37 @@ export default function StudentDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* 1. Enter Room Button (دخول الحلقة) - Conditioned on approval */}
+            {/* Single Dynamic Action Button in Hero */}
             {hasApprovedHalaqa ? (
               <Link
                 href={`/classroom/${approvedHalaqat[0].currentLiveSessionId || approvedHalaqat[0].id}?role=student`}
-                className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 hover:to-gold-accent text-slate-950 font-black px-4 py-2.5 rounded-2xl text-xs shadow-lg shadow-amber-950/20 transition-transform hover:scale-105 active:scale-95"
-                title="دخول قاعة الحلقة والتسميع المباشر (طالب معتمد)"
+                className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black px-4 py-2.5 rounded-2xl text-xs shadow-lg shadow-amber-950/20 transition-transform hover:scale-105 active:scale-95"
+                title="متابعة الحلقة (طالب معتمد)"
               >
                 <Video className="w-4 h-4" />
-                <span>دخول الحلقة (معتمد)</span>
+                <span>متابعة الحلقة 🎥</span>
               </Link>
             ) : hasPendingHalaqa ? (
-              <Link
-                href="/student/my-halaqat"
-                className="flex items-center gap-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold px-4 py-2.5 rounded-2xl text-xs shadow transition active:scale-95"
+              <div
+                className="flex items-center gap-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold px-4 py-2.5 rounded-2xl text-xs shadow"
                 title="طلب الانضمام قيد المراجعة لدى فضيلة الشيخ"
               >
-                <Clock className="w-4 h-4 text-amber-400" />
-                <span>طلبك قيد موافقة الشيخ</span>
-              </Link>
+                <Clock className="w-4 h-4 text-amber-400 animate-spin" />
+                <span>في انتظار قبول الشيخ ⏳</span>
+              </div>
             ) : (
-              <Link
-                href="/student/my-halaqat"
-                className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-2xl text-xs shadow transition active:scale-95"
-                title="طلب الانضمام إلى حلقة (مشروط بموافقة وقبول الشيخ)"
+              <button
+                onClick={() => handleStudent1ClickJoin(undefined, halaqat[0]?.id)}
+                disabled={requestingSession}
+                className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-bold px-4 py-2.5 rounded-2xl text-xs shadow transition active:scale-95 disabled:opacity-50"
+                title="طلب الانضمام إلى الحلقة"
               >
-                <Lock className="w-4 h-4 text-amber-300" />
-                <span>طلب انضمام (بموافقة الشيخ)</span>
-              </Link>
+                <UserPlus className="w-4 h-4" />
+                <span>{requestingSession ? "جارٍ إرسال الطلب..." : "طلب انضمام"}</span>
+              </button>
             )}
 
-            {/* 2. Follow / Track Halaqa (متابعة الحلقة) */}
-            <Link
-              href="/student/my-halaqat"
-              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-3.5 py-2.5 rounded-2xl border border-white/20 text-xs shadow transition active:scale-95"
-              title="متابعة الحلقات وجداول الانعقاد"
-            >
-              <Eye className="w-4 h-4 text-amber-300" />
-              <span>متابعة الحلقة</span>
-            </Link>
-
-            {/* 3. Join New Halaqa (انضمام إلى حلقة) */}
-            <Link
-              href="/student/my-halaqat"
-              className="flex items-center gap-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white font-bold px-3.5 py-2.5 rounded-2xl border border-emerald-500/40 text-xs shadow transition active:scale-95"
-              title="طلب الانضمام إلى حلقات جديدة"
-            >
-              <UserPlus className="w-4 h-4 text-emerald-300" />
-              <span>انضمام إلى حلقة</span>
-            </Link>
-
-            {/* 4. Mushaf */}
+            {/* Mushaf Direct Access */}
             <Link
               href="/student/mushaf"
               className="flex items-center gap-1.5 bg-slate-800/80 hover:bg-slate-700/80 text-amber-300 font-bold px-3.5 py-2.5 rounded-2xl border border-amber-400/30 text-xs shadow transition"

@@ -10,7 +10,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "يجب تسجيل الدخول أولاً" }, { status: 401 });
     }
 
-    const { halaqaId, notes } = await req.json();
+    const body = await req.json();
+    const { halaqaId, sessionId, notes } = body;
 
     let studentProfileId = user.studentProfile?.id;
     if (!studentProfileId) {
@@ -24,54 +25,130 @@ export async function POST(req: Request) {
       studentProfileId = newProfile.id;
     }
 
-    // Check existing
-    const existing = await prisma.joinRequest.findFirst({
-      where: {
-        halaqaId,
-        studentId: studentProfileId,
-        status: "PENDING",
-      },
-    });
-
-    if (existing) {
-      return NextResponse.json({ error: "لديك طلب انضمام قيد المراجعة لهذه الحلقة مسبقاً" }, { status: 400 });
+    // Resolve active session if not explicitly passed
+    let activeSession = null;
+    if (sessionId) {
+      activeSession = await prisma.liveSession.findUnique({
+        where: { id: sessionId },
+        include: { halaqa: { include: { teacher: { include: { user: true } } } } },
+      });
     }
 
-    const request = await prisma.joinRequest.create({
-      data: {
-        halaqaId,
+    if (!activeSession && halaqaId) {
+      activeSession = await prisma.liveSession.findFirst({
+        where: { halaqaId, status: "ACTIVE" },
+        include: { halaqa: { include: { teacher: { include: { user: true } } } } },
+      });
+    }
+
+    const resolvedHalaqaId = halaqaId || activeSession?.halaqaId;
+    if (!resolvedHalaqaId) {
+      return NextResponse.json({ error: "معرف الحلقة مفقود" }, { status: 400 });
+    }
+
+    const halaqa = await prisma.halaqa.findUnique({
+      where: { id: resolvedHalaqaId },
+      include: { teacher: { include: { user: true } } },
+    });
+
+    if (!halaqa) {
+      return NextResponse.json({ error: "الحلقة غير موجودة" }, { status: 404 });
+    }
+
+    // 1. Session-Scoped Attendance record (if active session is running)
+    let sessionAttendance = null;
+    if (activeSession && activeSession.status === "ACTIVE") {
+      sessionAttendance = await prisma.sessionAttendance.upsert({
+        where: {
+          sessionId_studentId: {
+            sessionId: activeSession.id,
+            studentId: studentProfileId,
+          },
+        },
+        update: {
+          requestedCheckIn: true,
+          isVerifiedByTeacher: false, // In waiting state until Sheikh approves
+          notes: notes || "طلب انضمام للجلسة الحالية",
+        },
+        create: {
+          sessionId: activeSession.id,
+          studentId: studentProfileId,
+          status: "ABSENT",
+          requestedCheckIn: true,
+          isVerifiedByTeacher: false,
+          notes: notes || "طلب انضمام للجلسة الحالية",
+        },
+      });
+    }
+
+    // 2. Halaqa Join Request record
+    const existingReq = await prisma.joinRequest.findFirst({
+      where: {
+        halaqaId: resolvedHalaqaId,
         studentId: studentProfileId,
         status: "PENDING",
-        notes,
-      },
-      include: {
-        halaqa: { include: { teacher: { include: { user: true } } } },
       },
     });
 
-    // Notify teacher
-    await prisma.notification.create({
+    const request = existingReq || (await prisma.joinRequest.create({
       data: {
-        userId: request.halaqa.teacher.user.id,
-        title: "طلب انضمام جديد لحلقة تحفيظ",
-        body: `قدم الطالب ${user.name} طلباً للانضمام إلى: ${request.halaqa.name}.`,
-        type: "JOIN_REQUEST",
-        link: "/teacher/students?tab=requests",
+        halaqaId: resolvedHalaqaId,
+        studentId: studentProfileId,
+        status: "PENDING",
+        notes: notes || "طلب انضمام",
       },
+    }));
+
+    // 3. Notify Teacher in DB
+    const teacherUserId = halaqa.teacher?.user?.id;
+    if (teacherUserId) {
+      await prisma.notification.create({
+        data: {
+          userId: teacherUserId,
+          title: "طلب انضمام للحلقة",
+          body: `طلب الطالب ${user.name} الانضمام إلى: ${halaqa.name}.`,
+          type: "JOIN_REQUEST",
+          link: activeSession ? `/classroom/${activeSession.id}?role=teacher` : "/teacher/students?tab=requests",
+        },
+      }).catch(() => {});
+    }
+
+    // 4. Realtime Broadcast to Sheikh
+    const alertPayload = {
+      requestId: request.id,
+      sessionId: activeSession?.id || null,
+      halaqaId: resolvedHalaqaId,
+      halaqaName: halaqa.name,
+      studentId: studentProfileId,
+      studentName: user.name || "طالب العلم",
+      studentAvatar: user.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150",
+      teacherUserId,
+      time: new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    realtimeHub.broadcast("global", {
+      type: "SESSION_JOIN_REQUESTED",
+      payload: alertPayload,
     });
 
-    // Publish realtime event
     realtimeHub.broadcast("global", {
       type: "JOIN_REQUEST_SUBMITTED",
-      payload: {
-        requestId: request.id,
-        halaqaId,
-        halaqaName: request.halaqa.name,
-        studentName: user.name,
-      },
+      payload: alertPayload,
     });
 
-    return NextResponse.json({ success: true, request });
+    if (activeSession) {
+      realtimeHub.broadcast(`session-${activeSession.id}`, {
+        type: "SESSION_JOIN_REQUESTED",
+        payload: alertPayload,
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      request,
+      sessionAttendance,
+      message: "تم رفع طلب الانضمام إلى فضيلة الشيخ بنجاح وهو قيد المراجعة والاعتماد",
+    });
   } catch (error) {
     console.error("Join request error:", error);
     return NextResponse.json({ error: "فشل إرسال طلب الانضمام" }, { status: 500 });

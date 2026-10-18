@@ -9,12 +9,7 @@ export default function StudentHalaqatPage() {
   const { lastEvent } = useRealtime();
   const [halaqat, setHalaqat] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [requestModal, setRequestModal] = useState<{ isOpen: boolean; halaqa: any | null }>({
-    isOpen: false,
-    halaqa: null,
-  });
-  const [requestNotes, setRequestNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [requestingHalaqaId, setRequestingHalaqaId] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState("");
 
   const fetchHalaqat = async () => {
@@ -40,6 +35,7 @@ export default function StudentHalaqatPage() {
     if (lastEvent) {
       if (
         lastEvent.type === "SCHEDULE_UPDATED" ||
+        lastEvent.type === "SESSION_JOIN_APPROVED" ||
         lastEvent.type === "JOIN_REQUEST_APPROVED" ||
         lastEvent.type === "JOIN_REQUEST_REJECTED"
       ) {
@@ -48,23 +44,21 @@ export default function StudentHalaqatPage() {
     }
   }, [lastEvent]);
 
-  const handleSendJoinRequest = async () => {
-    if (!requestModal.halaqa) return;
-    setSubmitting(true);
+  const handleDirectJoin = async (h: any) => {
+    setRequestingHalaqaId(h.id);
     try {
       const res = await fetch("/api/student/join-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          halaqaId: requestModal.halaqa.id,
-          notes: requestNotes,
+          halaqaId: h.id,
+          sessionId: h.currentLiveSessionId,
         }),
       });
 
       if (res.ok) {
-        setSuccessMsg(`تم إرسال طلب الانضمام إلى ${requestModal.halaqa.name} بنجاح!`);
-        setRequestModal({ isOpen: false, halaqa: null });
-        setRequestNotes("");
+        setSuccessMsg(`تم رفع طلب الانضمام إلى: ${h.name} لفضيلة الشيخ بنجاح، وهو قيد المراجعة والاعتماد.`);
+        fetchHalaqat();
         setTimeout(() => setSuccessMsg(""), 4000);
       } else {
         const d = await res.json();
@@ -72,8 +66,9 @@ export default function StudentHalaqatPage() {
       }
     } catch (e) {
       console.error(e);
+      alert("حدث خطأ أثناء إرسال الطلب");
     } finally {
-      setSubmitting(false);
+      setRequestingHalaqaId(null);
     }
   };
 
@@ -163,121 +158,41 @@ export default function StudentHalaqatPage() {
                   </div>
                 </div>
 
-                <div className="pt-2 flex flex-col gap-2">
+                <div className="pt-2">
                   {h.studentStatus === "ENROLLED" ? (
-                    <div className="flex items-center gap-2">
-                      {/* 1. Enter Room Button (دخول الحلقة) - Only for approved students */}
-                      <button
-                        onClick={() =>
-                          (window.location.href = `/classroom/${
-                            h.currentLiveSessionId || h.id
-                          }?role=student`)
-                        }
-                        className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm transition active:scale-95"
-                        title="دخول قاعة الحلقة الآن (طالب معتمد ومقبول)"
-                      >
-                        <Video className="w-3.5 h-3.5" />
-                        <span>دخول الحلقة (معتمد)</span>
-                      </button>
-
-                      {/* 2. Follow / Track (متابعة الحلقة) */}
-                      <button
-                        onClick={() =>
-                          (window.location.href = `/student/mushaf`)
-                        }
-                        className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-bold text-xs py-2.5 rounded-xl transition"
-                        title="متابعة المصحف وورد الحفظ"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>متابعة الحلقة</span>
-                      </button>
-                    </div>
+                    <button
+                      onClick={() =>
+                        (window.location.href = `/classroom/${
+                          h.currentLiveSessionId || h.id
+                        }?role=student`)
+                      }
+                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black text-xs py-3 rounded-2xl shadow-md transition-transform hover:scale-102 active:scale-98"
+                      title="متابعة الحلقة (طالب معتمد ومقبول)"
+                    >
+                      <Video className="w-4 h-4" />
+                      <span>متابعة الحلقة 🎥</span>
+                    </button>
                   ) : h.studentStatus === "PENDING" ? (
-                    <div className="space-y-2">
-                      <div className="w-full flex items-center justify-center gap-2 bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold text-xs py-2.5 rounded-xl">
-                        <Clock className="w-4 h-4 text-amber-600 animate-spin" />
-                        <span>طلبك قيد مراجعة واعتماد الشيخ ⏳</span>
-                      </div>
-                      <button
-                        onClick={() => (window.location.href = `/student/mushaf`)}
-                        className="w-full flex items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs py-2 rounded-xl transition"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>متابعة الورد القرآني</span>
-                      </button>
+                    <div className="w-full flex items-center justify-center gap-2 bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold text-xs py-3 rounded-2xl">
+                      <Clock className="w-4 h-4 text-amber-600 animate-spin" />
+                      <span>في انتظار قبول الشيخ ⏳</span>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      <button
-                        onClick={() => setRequestModal({ isOpen: true, halaqa: h })}
-                        className="w-full flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs py-2.5 rounded-xl shadow-xs transition active:scale-95"
-                        title="تقديم طلب انضمام مشروط بموافقة وقبول فضيلة الشيخ"
-                      >
-                        <UserPlus className="w-3.5 h-3.5" />
-                        <span>طلب انضمام (مشروط بموافقة الشيخ)</span>
-                      </button>
-                      <button
-                        onClick={() => (window.location.href = `/student/mushaf`)}
-                        className="w-full flex items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs py-2 rounded-xl transition"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>متابعة تفاصيل الحلقة</span>
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleDirectJoin(h)}
+                      disabled={requestingHalaqaId === h.id}
+                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs py-3 rounded-2xl shadow transition-transform hover:scale-102 active:scale-98 disabled:opacity-50"
+                      title="طلب الانضمام إلى الحلقة"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      <span>{requestingHalaqaId === h.id ? "جارٍ إرسال الطلب للشيخ..." : "طلب انضمام"}</span>
+                    </button>
                   )}
                 </div>
               </div>
             );
           })}
         </div>
-
-        {/* Modal: Join Request */}
-        {requestModal.isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-black text-sm text-slate-900 dark:text-slate-100">
-                  طلب الانضمام إلى: {requestModal.halaqa?.name}
-                </h3>
-                <button
-                  onClick={() => setRequestModal({ isOpen: false, halaqa: null })}
-                  className="text-slate-400"
-                >
-                  <XCircle className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
-                  رسالة أو نبذة للمعلم عن مستواك القرآني:
-                </label>
-                <textarea
-                  rows={3}
-                  value={requestNotes}
-                  onChange={(e) => setRequestNotes(e.target.value)}
-                  placeholder="مثال: أحفظ جزء عم وأود البدء في سورة البقرة، ملتزم بمواعيد الفجر إن شاء الله..."
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-slate-100"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  onClick={() => setRequestModal({ isOpen: false, halaqa: null })}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500"
-                >
-                  إلغاء
-                </button>
-                <button
-                  onClick={handleSendJoinRequest}
-                  disabled={submitting}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 py-2 rounded-xl shadow"
-                >
-                  {submitting ? "جارٍ الإرسال..." : "إرسال طلب الانضمام"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </AppShell>
   );

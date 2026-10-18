@@ -123,47 +123,89 @@ export async function GET() {
       studentProfileId = sp?.id;
     }
 
-    // Annotate each halaqa with student approval status
+    // Annotate each halaqa with session-scoped student approval status
     const annotatedHalaqat = await Promise.all(
       halaqat.map(async (h) => {
         let studentStatus = "NOT_ENROLLED"; // ENROLLED | PENDING | REJECTED | NOT_ENROLLED
         let isApprovedBySheikh = false;
 
+        const activeSession = h.liveSessions && h.liveSessions.length > 0 ? h.liveSessions[0] : null;
+        const activeSessionId = activeSession?.id || h.currentLiveSessionId;
+
         if (user) {
           if (user.role === "TEACHER" || user.role === "ADMIN") {
             studentStatus = "ENROLLED";
             isApprovedBySheikh = true;
-          } else {
-            // Check active enrollment
-            const isEnrolled = h.enrollments.some(
-              (e) => (studentProfileId && e.studentId === studentProfileId) || e.student?.userId === user.id
-            );
-
-            if (isEnrolled) {
-              studentStatus = "ENROLLED";
-              isApprovedBySheikh = true;
-            } else {
-              // Check join requests
-              const pendingReq = await prisma.joinRequest.findFirst({
+          } else if (studentProfileId) {
+            // If there is an active session, check session-scoped attendance first
+            if (activeSession) {
+              const sessionAtt = await prisma.sessionAttendance.findUnique({
                 where: {
-                  halaqaId: h.id,
-                  student: { userId: user.id },
-                  status: "PENDING",
+                  sessionId_studentId: {
+                    sessionId: activeSession.id,
+                    studentId: studentProfileId,
+                  },
                 },
               });
 
-              if (pendingReq) {
+              if (sessionAtt?.isVerifiedByTeacher) {
+                // Sheikh approved this student for this live session!
+                studentStatus = "ENROLLED";
+                isApprovedBySheikh = true;
+              } else if (sessionAtt?.requestedCheckIn) {
+                // Student requested and is waiting for Sheikh's 1-click acceptance
                 studentStatus = "PENDING";
+                isApprovedBySheikh = false;
               } else {
-                const rejectedReq = await prisma.joinRequest.findFirst({
+                // Check if already enrolled in halaqa
+                const isEnrolled = h.enrollments.some(
+                  (e) => e.studentId === studentProfileId || e.student?.userId === user.id
+                );
+                if (isEnrolled) {
+                  studentStatus = "ENROLLED";
+                  isApprovedBySheikh = true;
+                } else {
+                  const pendingReq = await prisma.joinRequest.findFirst({
+                    where: {
+                      halaqaId: h.id,
+                      studentId: studentProfileId,
+                      status: "PENDING",
+                    },
+                  });
+                  if (pendingReq) {
+                    studentStatus = "PENDING";
+                  } else {
+                    studentStatus = "NOT_ENROLLED";
+                  }
+                }
+              }
+            } else {
+              // No active live session right now
+              const isEnrolled = h.enrollments.some(
+                (e) => e.studentId === studentProfileId || e.student?.userId === user.id
+              );
+              if (isEnrolled) {
+                studentStatus = "ENROLLED";
+                isApprovedBySheikh = true;
+              } else {
+                const pendingReq = await prisma.joinRequest.findFirst({
                   where: {
                     halaqaId: h.id,
-                    student: { userId: user.id },
-                    status: "REJECTED",
+                    studentId: studentProfileId,
+                    status: "PENDING",
                   },
                 });
-                if (rejectedReq) {
-                  studentStatus = "REJECTED";
+                if (pendingReq) {
+                  studentStatus = "PENDING";
+                } else {
+                  const rejectedReq = await prisma.joinRequest.findFirst({
+                    where: {
+                      halaqaId: h.id,
+                      studentId: studentProfileId,
+                      status: "REJECTED",
+                    },
+                  });
+                  studentStatus = rejectedReq ? "REJECTED" : "NOT_ENROLLED";
                 }
               }
             }
@@ -172,6 +214,7 @@ export async function GET() {
 
         return {
           ...h,
+          currentLiveSessionId: activeSessionId,
           studentStatus,
           isApprovedBySheikh,
         };

@@ -57,30 +57,45 @@ export async function GET(req: Request) {
         isAuthorized = true;
         authorizationStatus = "AUTHORIZED";
       } else if (session?.halaqa) {
-        const isEnrolled = session.halaqa.enrollments?.some(
-          (e: any) => e.student?.userId === user.id || e.studentId === user.studentProfile?.id
+        const studentProfileId = user.studentProfile?.id;
+        const sessionAtt = session.attendances?.find(
+          (a: any) =>
+            (studentProfileId && a.studentId === studentProfileId) ||
+            a.student?.userId === user.id
         );
 
-        if (isEnrolled) {
+        if (sessionAtt?.isVerifiedByTeacher) {
           isAuthorized = true;
           authorizationStatus = "AUTHORIZED";
+        } else if (sessionAtt?.requestedCheckIn) {
+          isAuthorized = false;
+          authorizationStatus = "PENDING_APPROVAL";
         } else {
-          const hasPending = session.halaqa.joinRequests?.some(
-            (r: any) => (r.student?.userId === user.id || r.studentId === user.studentProfile?.id) && r.status === "PENDING"
+          const isEnrolled = session.halaqa.enrollments?.some(
+            (e: any) => e.student?.userId === user.id || e.studentId === studentProfileId
           );
-          if (hasPending) {
-            isAuthorized = false;
-            authorizationStatus = "PENDING_APPROVAL";
+
+          if (isEnrolled) {
+            isAuthorized = true;
+            authorizationStatus = "AUTHORIZED";
           } else {
-            const hasRejected = session.halaqa.joinRequests?.some(
-              (r: any) => (r.student?.userId === user.id || r.studentId === user.studentProfile?.id) && r.status === "REJECTED"
+            const hasPending = session.halaqa.joinRequests?.some(
+              (r: any) => (r.student?.userId === user.id || r.studentId === studentProfileId) && r.status === "PENDING"
             );
-            if (hasRejected) {
+            if (hasPending) {
               isAuthorized = false;
-              authorizationStatus = "REJECTED";
+              authorizationStatus = "PENDING_APPROVAL";
             } else {
-              isAuthorized = false;
-              authorizationStatus = "NEEDS_REQUEST";
+              const hasRejected = session.halaqa.joinRequests?.some(
+                (r: any) => (r.student?.userId === user.id || r.studentId === studentProfileId) && r.status === "REJECTED"
+              );
+              if (hasRejected) {
+                isAuthorized = false;
+                authorizationStatus = "REJECTED";
+              } else {
+                isAuthorized = false;
+                authorizationStatus = "NEEDS_REQUEST";
+              }
             }
           }
         }

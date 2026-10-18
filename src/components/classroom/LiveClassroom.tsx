@@ -28,7 +28,11 @@ import {
   Clock,
   ShieldCheck,
   UserPlus,
+  UserCheck,
+  Bell,
+  X,
 } from "lucide-react";
+import { playTeacherJoinAlertSound, playStudentApprovedSound } from "@/lib/sound";
 
 interface LiveClassroomProps {
   sessionId: string;
@@ -74,9 +78,20 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     teacherName: "فضيلة الشيخ أحمد المنشاوي",
     id: "",
   });
-  const [joinNotes, setJoinNotes] = useState("");
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [requestSuccessMsg, setRequestSuccessMsg] = useState("");
+
+  const [teacherJoinToast, setTeacherJoinToast] = useState<{
+    visible: boolean;
+    requestId?: string;
+    sessionId?: string;
+    halaqaId?: string;
+    studentId?: string;
+    studentName?: string;
+    studentAvatar?: string;
+    isAccepting?: boolean;
+    accepted?: boolean;
+  } | null>(null);
 
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
@@ -155,23 +170,74 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     fetchSession();
   }, [sessionId]);
 
-  // Realtime listener for approval updates
+  // Realtime listener for approval updates and teacher in-room join requests
   useEffect(() => {
-    if (lastEvent) {
-      if (
-        lastEvent.type === "JOIN_REQUEST_APPROVED" ||
-        lastEvent.type === "SCHEDULE_UPDATED"
-      ) {
-        fetchSession();
+    if (!lastEvent) return;
+
+    if (
+      lastEvent.type === "JOIN_REQUEST_APPROVED" ||
+      lastEvent.type === "SESSION_JOIN_APPROVED" ||
+      lastEvent.type === "SCHEDULE_UPDATED"
+    ) {
+      if (!isTeacher) {
+        playStudentApprovedSound();
+      }
+      fetchSession();
+    }
+
+    if (
+      lastEvent.type === "SESSION_JOIN_REQUESTED" ||
+      lastEvent.type === "JOIN_REQUEST_SUBMITTED"
+    ) {
+      if (isTeacher) {
+        const p = lastEvent.payload;
+        playTeacherJoinAlertSound();
+        setTeacherJoinToast({
+          visible: true,
+          requestId: p.requestId,
+          sessionId: p.sessionId || sessionId,
+          halaqaId: p.halaqaId,
+          studentId: p.studentId,
+          studentName: p.studentName || "طالب العلم",
+          studentAvatar: p.studentAvatar,
+          isAccepting: false,
+          accepted: false,
+        });
       }
     }
-  }, [lastEvent]);
+  }, [lastEvent, isTeacher, sessionId]);
 
-  // Handle submitting join request directly from gatekeeper screen
+  // Handle teacher 1-click accept inside classroom
+  const handleTeacherAcceptInClass = async () => {
+    if (!teacherJoinToast) return;
+    setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: true } : null));
+    try {
+      const res = await fetch("/api/teacher/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ACCEPT_JOIN_SESSION",
+          sessionId: teacherJoinToast.sessionId || sessionId,
+          halaqaId: teacherJoinToast.halaqaId,
+          studentId: teacherJoinToast.studentId,
+          requestId: teacherJoinToast.requestId,
+        }),
+      });
+
+      if (res.ok) {
+        setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false, accepted: true } : null));
+        setTimeout(() => setTeacherJoinToast(null), 3000);
+      } else {
+        setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false } : null));
+      }
+    } catch {
+      setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false } : null));
+    }
+  };
+
+  // Handle submitting join request directly from gatekeeper screen (1-click direct tap)
   const handleSendJoinRequestFromGate = async () => {
     const targetHalaqaId = halaqaInfo.id || session?.halaqaId || session?.halaqa?.id;
-    if (!targetHalaqaId) return;
-
     setSubmittingRequest(true);
     try {
       const res = await fetch("/api/student/join-request", {
@@ -179,7 +245,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           halaqaId: targetHalaqaId,
-          notes: joinNotes,
+          sessionId: session?.id || sessionId,
         }),
       });
 
@@ -620,44 +686,44 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
           {/* Status-specific body */}
           {authStatus === "PENDING_APPROVAL" ? (
-            <div className="bg-amber-950/40 border border-amber-500/40 rounded-2xl p-5 text-right space-y-3">
-              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
-                <Clock className="w-5 h-5 shrink-0 animate-spin" />
-                <span>طلب الانضمام قيد المراجعة لدى فضيلة الشيخ</span>
+            <div className="bg-amber-950/40 border border-amber-500/40 rounded-3xl p-6 text-center space-y-4">
+              <div className="flex items-center justify-center gap-2 text-amber-300 font-black text-sm">
+                <Clock className="w-5 h-5 shrink-0 animate-spin text-amber-400" />
+                <span>طلبك قيد موافقة واعتماد فضيلة الشيخ ⏳</span>
               </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                تم رفع طلبك بنجاح إلى فضيلة الشيخ. حفاظاً على قدسية المجالس القرآنية، سيتم تفعيل إمكانية دخولك مباشرة فور اعتماد الشيخ لطلبك وقبولك رسمياً.
+              <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
+                تم إشعار الشيخ بطلبك الآن. سيتم فتح قاعة الحلقة تلقائياً فور موافقة الشيخ دون الحاجة لإعادة تحميل الصفحة.
               </p>
               {requestSuccessMsg && (
-                <div className="p-2.5 bg-emerald-900/40 border border-emerald-500/40 text-emerald-300 text-xs rounded-xl flex items-center gap-2">
+                <div className="p-2.5 bg-emerald-900/40 border border-emerald-500/40 text-emerald-300 text-xs rounded-xl flex items-center justify-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
                   <span>{requestSuccessMsg}</span>
                 </div>
               )}
-              <div className="pt-2 flex flex-col sm:flex-row gap-2">
+              <div className="pt-2 flex flex-col sm:flex-row justify-center gap-2">
                 <button
                   onClick={fetchSession}
-                  className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-2.5 rounded-xl transition"
+                  className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-3 rounded-xl transition"
                 >
                   <RefreshCw className="w-4 h-4" />
-                  التحقق من موافقة الشيخ الآن
+                  تحديث الحالة الآن
                 </button>
                 <Link
                   href="/student/dashboard"
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-center"
+                  className="px-5 py-3 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-center"
                 >
                   العودة للرئيسية
                 </Link>
               </div>
             </div>
           ) : authStatus === "REJECTED" ? (
-            <div className="bg-red-950/40 border border-red-500/40 rounded-2xl p-5 text-right space-y-3">
-              <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
+            <div className="bg-red-950/40 border border-red-500/40 rounded-3xl p-6 text-center space-y-3">
+              <div className="flex items-center justify-center gap-2 text-red-400 font-bold text-sm">
                 <AlertCircle className="w-5 h-5 shrink-0" />
                 <span>اعتذر فضيلة الشيخ عن قبول الانضمام</span>
               </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                نعتذر إليك، لا يمكن الانضمام لهذه الحلقة في الوقت الراهن لاكتمال النصاب المحدد أو عدم ملائمة المستوى. نوصيك باستعراض الحلقات القرآنية الأخرى المتاحة.
+              <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
+                نعتذر إليك، لا يمكن الانضمام لهذه الحلقة في الوقت الراهن لاكتمال النصاب المحدد.
               </p>
               <div className="pt-2 flex justify-center">
                 <Link
@@ -669,38 +735,28 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
               </div>
             </div>
           ) : (
-            <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 text-right space-y-4">
+            <div className="bg-slate-800/80 border border-slate-700 rounded-3xl p-6 text-center space-y-5">
               <div>
                 <h4 className="text-sm font-bold text-slate-200 mb-1">
-                  تقديم طلب انضمام مشروط بموافقة الشيخ
+                  طلب انضمام إلى الحلقة المباشرة
                 </h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  هذه الحلقة مخصصة للطلاب المعتمدين من الشيخ. يرجى كتابة نبذة مختصرة عن حفظك ومستواك القرآني ليتمكن الشيخ من مراجعتها وقبولك.
+                <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
+                  هذه الحلقة مخصصة للطلاب المعتمدين من الشيخ. اضغط أدناه لرفع إشعار فوري لفضيلة الشيخ لقبولك.
                 </p>
               </div>
 
-              <div>
-                <textarea
-                  rows={3}
-                  value={joinNotes}
-                  onChange={(e) => setJoinNotes(e.target.value)}
-                  placeholder="مثال: السلام عليكم يا شيخنا، أحفظ 5 أجزاء وأرجو التكرم بقبولي في هذه الحلقة المباركة لتثبيت الحفظ والتسميع..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-amber-400"
-                />
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex flex-col sm:flex-row gap-2.5">
                 <button
                   onClick={handleSendJoinRequestFromGate}
                   disabled={submittingRequest}
-                  className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs py-3 rounded-xl shadow-lg transition active:scale-95 disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-sm py-3.5 rounded-2xl shadow-xl transition-transform hover:scale-102 active:scale-98 disabled:opacity-50"
                 >
-                  <Send className="w-4 h-4" />
-                  {submittingRequest ? "جارٍ الإرسال للشيخ..." : "إرسال طلب الانضمام إلى فضيلة الشيخ"}
+                  <UserPlus className="w-5 h-5" />
+                  <span>{submittingRequest ? "جارٍ إرسال الطلب للشيخ..." : "طلب انضمام"}</span>
                 </button>
                 <Link
                   href="/student/dashboard"
-                  className="px-4 py-3 rounded-xl text-xs font-bold bg-slate-700/60 hover:bg-slate-700 text-slate-300 transition text-center"
+                  className="px-5 py-3.5 rounded-2xl text-xs font-bold bg-slate-700/60 hover:bg-slate-700 text-slate-300 transition text-center"
                 >
                   العودة للرئيسية
                 </Link>
@@ -722,6 +778,46 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] bg-slate-950 text-white rounded-2xl overflow-hidden shadow-2xl border border-slate-800 relative">
+      {/* Teacher in-room join request toast */}
+      {teacherJoinToast?.visible && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] animate-in slide-in-from-top duration-200">
+          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950 text-white rounded-2xl p-4 shadow-2xl border-2 border-emerald-500/70 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                <Bell className="w-5 h-5 animate-bounce" />
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-black text-amber-300 block">طلب انضمام للحلقة</span>
+                <span className="text-xs font-bold text-white block">{teacherJoinToast.studentName}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {teacherJoinToast.accepted ? (
+                <span className="text-xs font-bold text-emerald-400">تم القبول ✅</span>
+              ) : (
+                <>
+                  <button
+                    onClick={handleTeacherAcceptInClass}
+                    disabled={teacherJoinToast.isAccepting}
+                    className="flex items-center gap-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow transition"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>{teacherJoinToast.isAccepting ? "جارٍ القبول..." : "قبول ودخول ✅"}</span>
+                  </button>
+                  <button
+                    onClick={() => setTeacherJoinToast(null)}
+                    className="text-slate-400 hover:text-white p-1 rounded-lg"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hidden Unmuted Audio Element to guarantee clear two-way sound */}
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
