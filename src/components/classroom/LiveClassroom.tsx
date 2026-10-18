@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useAuth } from "@/components/providers/AppProviders";
+import { useAuth, useRealtime } from "@/components/providers/AppProviders";
 import { InteractiveMushaf } from "@/components/mushaf/InteractiveMushaf";
 import {
   Mic,
@@ -23,6 +24,10 @@ import {
   AlertCircle,
   Sparkles,
   RefreshCw,
+  Lock,
+  Clock,
+  ShieldCheck,
+  UserPlus,
 } from "lucide-react";
 
 interface LiveClassroomProps {
@@ -57,11 +62,22 @@ const ICE_SERVERS: RTCConfiguration = {
 
 export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const { user } = useAuth();
+  const { lastEvent } = useRealtime();
   const searchParams = useSearchParams();
   const roleParam = searchParams.get("role");
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [authStatus, setAuthStatus] = useState<"CHECKING" | "AUTHORIZED" | "PENDING_APPROVAL" | "NEEDS_REQUEST" | "REJECTED">("CHECKING");
+  const [halaqaInfo, setHalaqaInfo] = useState<{ name: string; teacherName: string; id: string }>({
+    name: "حلقة التحفيظ والتجويد",
+    teacherName: "فضيلة الشيخ أحمد المنشاوي",
+    id: "",
+  });
+  const [joinNotes, setJoinNotes] = useState("");
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [requestSuccessMsg, setRequestSuccessMsg] = useState("");
+
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -104,13 +120,29 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const myRole = isTeacher ? "teacher" : "student";
   const myName = user?.name || (isTeacher ? "الشيخ أحمد المنشاوي" : "عبد الرحمن محمد العلي");
 
-  // Fetch session details
+  // Fetch session details & verify Sheikh approval
   const fetchSession = async () => {
     try {
       const res = await fetch(`/api/live/session?sessionId=${sessionId}`);
       if (res.ok) {
         const data = await res.json();
         setSession(data.session);
+
+        const hName = data.halaqaName || data.session?.halaqa?.name || "حلقة القرآن الكريم";
+        const tName = data.teacherName || data.session?.halaqa?.teacher?.user?.name || "فضيلة الشيخ أحمد المنشاوي";
+        const hId = data.halaqaId || data.session?.halaqaId || data.session?.halaqa?.id || "";
+
+        setHalaqaInfo({ name: hName, teacherName: tName, id: hId });
+
+        if (isTeacher) {
+          setAuthStatus("AUTHORIZED");
+        } else {
+          if (data.isAuthorized) {
+            setAuthStatus("AUTHORIZED");
+          } else {
+            setAuthStatus(data.authorizationStatus || "NEEDS_REQUEST");
+          }
+        }
       }
     } catch (e) {
       console.error(e);
@@ -123,9 +155,52 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     fetchSession();
   }, [sessionId]);
 
-  // Auto-record student attendance check-in when joining
+  // Realtime listener for approval updates
   useEffect(() => {
-    if (!isTeacher) {
+    if (lastEvent) {
+      if (
+        lastEvent.type === "JOIN_REQUEST_APPROVED" ||
+        lastEvent.type === "SCHEDULE_UPDATED"
+      ) {
+        fetchSession();
+      }
+    }
+  }, [lastEvent]);
+
+  // Handle submitting join request directly from gatekeeper screen
+  const handleSendJoinRequestFromGate = async () => {
+    const targetHalaqaId = halaqaInfo.id || session?.halaqaId || session?.halaqa?.id;
+    if (!targetHalaqaId) return;
+
+    setSubmittingRequest(true);
+    try {
+      const res = await fetch("/api/student/join-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          halaqaId: targetHalaqaId,
+          notes: joinNotes,
+        }),
+      });
+
+      if (res.ok) {
+        setAuthStatus("PENDING_APPROVAL");
+        setRequestSuccessMsg("تم رفع طلب الانضمام إلى فضيلة الشيخ بنجاح، وهو قيد المراجعة والاعتماد.");
+      } else {
+        const d = await res.json();
+        alert(d.error || "فشل إرسال طلب الانضمام");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("حدث خطأ أثناء إرسال الطلب");
+    } finally {
+      setSubmittingRequest(false);
+    }
+  };
+
+  // Auto-record student attendance check-in ONLY when student is authorized
+  useEffect(() => {
+    if (!isTeacher && authStatus === "AUTHORIZED") {
       fetch("/api/teacher/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -135,7 +210,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         }),
       }).catch(console.error);
     }
-  }, [sessionId, isTeacher]);
+  }, [sessionId, isTeacher, authStatus]);
 
   // Helper to send WebRTC signaling message via HTTP POST
   const sendSignalingMessage = async (signalType: string, payload: any) => {
@@ -237,6 +312,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
   // Setup local camera & microphone stream
   useEffect(() => {
+    if (!isTeacher && authStatus !== "AUTHORIZED") return;
     let active = true;
 
     const initMedia = async () => {
@@ -287,10 +363,11 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         peerConnectionRef.current.close();
       }
     };
-  }, [sessionId, myRole]);
+  }, [sessionId, myRole, authStatus, isTeacher]);
 
   // Robust HTTP Signaling Polling Loop (Every 1 second)
   useEffect(() => {
+    if (!isTeacher && authStatus !== "AUTHORIZED") return;
     let active = true;
 
     const pollSignals = async () => {
@@ -407,7 +484,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       clearInterval(interval);
       clearInterval(heartbeat);
     };
-  }, [sessionId, myRole, isTeacher, hasRemoteStream]);
+  }, [sessionId, myRole, isTeacher, hasRemoteStream, authStatus]);
 
   // Keep remote video element ref updated whenever remote stream is active
   useEffect(() => {
@@ -503,11 +580,140 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     }
   };
 
-  if (loading) {
+  if (loading || authStatus === "CHECKING") {
     return (
-      <div className="p-12 text-center text-slate-500 flex flex-col items-center">
-        <Radio className="w-8 h-8 text-emerald-600 animate-spin mb-3" />
-        جارٍ الاتصال بالغرفة الافتراضية...
+      <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center min-h-[50vh] gap-3">
+        <Radio className="w-8 h-8 text-emerald-500 animate-spin" />
+        <p className="text-sm font-bold">جارٍ التحقق من تصريح القبول والاعتماد من الشيخ...</p>
+      </div>
+    );
+  }
+
+  // Gatekeeper Barrier: Student access is strictly conditioned upon Sheikh's acceptance
+  if (!isTeacher && authStatus !== "AUTHORIZED") {
+    return (
+      <div className="min-h-[75vh] flex items-center justify-center p-4">
+        <div className="bg-slate-900/95 backdrop-blur-xl border-2 border-amber-500/40 rounded-3xl p-6 sm:p-10 max-w-xl w-full shadow-2xl text-center space-y-6 relative overflow-hidden text-white">
+          {/* Decorative aura */}
+          <div className="absolute -top-24 -left-24 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+          {/* Golden Shield & Lock Icon */}
+          <div className="relative mx-auto w-20 h-20 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-3xl bg-gradient-to-tr from-amber-500/20 to-gold-accent/30 animate-pulse border border-amber-400/40" />
+            <Lock className="w-9 h-9 text-amber-400 relative z-10" />
+          </div>
+
+          {/* Condition Header */}
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-400/30">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              الدخول مشروط بموافقة وقبول الشيخ
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-black text-white">
+              {halaqaInfo.name}
+            </h2>
+            <p className="text-xs sm:text-sm text-amber-200/80 font-medium">
+              بإشراف فضيلة {halaqaInfo.teacherName}
+            </p>
+          </div>
+
+          {/* Status-specific body */}
+          {authStatus === "PENDING_APPROVAL" ? (
+            <div className="bg-amber-950/40 border border-amber-500/40 rounded-2xl p-5 text-right space-y-3">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                <Clock className="w-5 h-5 shrink-0 animate-spin" />
+                <span>طلب الانضمام قيد المراجعة لدى فضيلة الشيخ</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                تم رفع طلبك بنجاح إلى فضيلة الشيخ. حفاظاً على قدسية المجالس القرآنية، سيتم تفعيل إمكانية دخولك مباشرة فور اعتماد الشيخ لطلبك وقبولك رسمياً.
+              </p>
+              {requestSuccessMsg && (
+                <div className="p-2.5 bg-emerald-900/40 border border-emerald-500/40 text-emerald-300 text-xs rounded-xl flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>{requestSuccessMsg}</span>
+                </div>
+              )}
+              <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                <button
+                  onClick={fetchSession}
+                  className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-2.5 rounded-xl transition"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  التحقق من موافقة الشيخ الآن
+                </button>
+                <Link
+                  href="/student/dashboard"
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-center"
+                >
+                  العودة للرئيسية
+                </Link>
+              </div>
+            </div>
+          ) : authStatus === "REJECTED" ? (
+            <div className="bg-red-950/40 border border-red-500/40 rounded-2xl p-5 text-right space-y-3">
+              <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
+                <AlertCircle className="w-5 h-5 shrink-0" />
+                <span>اعتذر فضيلة الشيخ عن قبول الانضمام</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                نعتذر إليك، لا يمكن الانضمام لهذه الحلقة في الوقت الراهن لاكتمال النصاب المحدد أو عدم ملائمة المستوى. نوصيك باستعراض الحلقات القرآنية الأخرى المتاحة.
+              </p>
+              <div className="pt-2 flex justify-center">
+                <Link
+                  href="/student/my-halaqat"
+                  className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl border border-slate-700"
+                >
+                  استعراض الحلقات المتاحة
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 text-right space-y-4">
+              <div>
+                <h4 className="text-sm font-bold text-slate-200 mb-1">
+                  تقديم طلب انضمام مشروط بموافقة الشيخ
+                </h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  هذه الحلقة مخصصة للطلاب المعتمدين من الشيخ. يرجى كتابة نبذة مختصرة عن حفظك ومستواك القرآني ليتمكن الشيخ من مراجعتها وقبولك.
+                </p>
+              </div>
+
+              <div>
+                <textarea
+                  rows={3}
+                  value={joinNotes}
+                  onChange={(e) => setJoinNotes(e.target.value)}
+                  placeholder="مثال: السلام عليكم يا شيخنا، أحفظ 5 أجزاء وأرجو التكرم بقبولي في هذه الحلقة المباركة لتثبيت الحفظ والتسميع..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-amber-400"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  onClick={handleSendJoinRequestFromGate}
+                  disabled={submittingRequest}
+                  className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs py-3 rounded-xl shadow-lg transition active:scale-95 disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" />
+                  {submittingRequest ? "جارٍ الإرسال للشيخ..." : "إرسال طلب الانضمام إلى فضيلة الشيخ"}
+                </button>
+                <Link
+                  href="/student/dashboard"
+                  className="px-4 py-3 rounded-xl text-xs font-bold bg-slate-700/60 hover:bg-slate-700 text-slate-300 transition text-center"
+                >
+                  العودة للرئيسية
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Footer note */}
+          <div className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5 pt-2">
+            <Lock className="w-3 h-3 text-amber-500/70" />
+            <span>نظام الاعتماد القرآني المعتمد لمنصة ورتّل</span>
+          </div>
+        </div>
       </div>
     );
   }

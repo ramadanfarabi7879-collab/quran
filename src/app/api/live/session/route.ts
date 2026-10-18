@@ -10,65 +10,91 @@ export async function GET(req: Request) {
     const halaqaId = searchParams.get("halaqaId");
 
     let session = null;
+    const includeConfig = {
+      halaqa: {
+        include: {
+          teacher: { include: { user: true } },
+          enrollments: {
+            where: { status: "ACTIVE" },
+            include: { student: { include: { user: true } } },
+          },
+          joinRequests: {
+            include: { student: { include: { user: true } } },
+          },
+        },
+      },
+      attendances: {
+        include: { student: { include: { user: true } } },
+      },
+      mushafState: true,
+    };
+
     if (sessionId) {
       session = await prisma.liveSession.findUnique({
         where: { id: sessionId },
-        include: {
-          halaqa: {
-            include: {
-              teacher: { include: { user: true } },
-              enrollments: {
-                include: { student: { include: { user: true } } },
-              },
-            },
-          },
-          attendances: {
-            include: { student: { include: { user: true } } },
-          },
-          mushafState: true,
-        },
+        include: includeConfig,
       });
     } else if (halaqaId) {
       session = await prisma.liveSession.findFirst({
         where: { halaqaId, status: "ACTIVE" },
-        include: {
-          halaqa: {
-            include: {
-              teacher: { include: { user: true } },
-              enrollments: {
-                include: { student: { include: { user: true } } },
-              },
-            },
-          },
-          attendances: {
-            include: { student: { include: { user: true } } },
-          },
-          mushafState: true,
-        },
+        include: includeConfig,
       });
     } else {
       // Find any currently active live session
       session = await prisma.liveSession.findFirst({
         where: { status: "ACTIVE" },
         orderBy: { startedAt: "desc" },
-        include: {
-          halaqa: {
-            include: {
-              teacher: { include: { user: true } },
-              enrollments: {
-                include: { student: { include: { user: true } } },
-              },
-            },
-          },
-          attendances: {
-            include: { student: { include: { user: true } } },
-          },
-          mushafState: true,
-        },
+        include: includeConfig,
       });
     }
 
-    return NextResponse.json({ session });
+    const user = await getCurrentUser();
+    let isAuthorized = false;
+    let authorizationStatus = "UNAUTHENTICATED"; // "AUTHORIZED" | "PENDING_APPROVAL" | "NEEDS_REQUEST" | "REJECTED" | "UNAUTHENTICATED"
+
+    if (user) {
+      if (user.role === "TEACHER" || user.role === "ADMIN" || session?.halaqa?.teacher?.userId === user.id) {
+        isAuthorized = true;
+        authorizationStatus = "AUTHORIZED";
+      } else if (session?.halaqa) {
+        const isEnrolled = session.halaqa.enrollments?.some(
+          (e: any) => e.student?.userId === user.id || e.studentId === user.studentProfile?.id
+        );
+
+        if (isEnrolled) {
+          isAuthorized = true;
+          authorizationStatus = "AUTHORIZED";
+        } else {
+          const hasPending = session.halaqa.joinRequests?.some(
+            (r: any) => (r.student?.userId === user.id || r.studentId === user.studentProfile?.id) && r.status === "PENDING"
+          );
+          if (hasPending) {
+            isAuthorized = false;
+            authorizationStatus = "PENDING_APPROVAL";
+          } else {
+            const hasRejected = session.halaqa.joinRequests?.some(
+              (r: any) => (r.student?.userId === user.id || r.studentId === user.studentProfile?.id) && r.status === "REJECTED"
+            );
+            if (hasRejected) {
+              isAuthorized = false;
+              authorizationStatus = "REJECTED";
+            } else {
+              isAuthorized = false;
+              authorizationStatus = "NEEDS_REQUEST";
+            }
+          }
+        }
+      }
+    }
+
+    return NextResponse.json({
+      session,
+      isAuthorized,
+      authorizationStatus,
+      teacherName: session?.halaqa?.teacher?.user?.name || "فضيلة الشيخ أحمد المنشاوي",
+      halaqaName: session?.halaqa?.name || "",
+      halaqaId: session?.halaqaId || session?.halaqa?.id || "",
+    });
   } catch (error) {
     console.error("Get live session error:", error);
     return NextResponse.json({ error: "فشل استرداد بيانات الجلسة" }, { status: 500 });

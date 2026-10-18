@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { realtimeHub } from "@/lib/realtime";
 
 export async function POST(req: Request) {
   try {
@@ -56,6 +57,17 @@ export async function POST(req: Request) {
         body: `قدم الطالب ${user.name} طلباً للانضمام إلى: ${request.halaqa.name}.`,
         type: "JOIN_REQUEST",
         link: "/teacher/students?tab=requests",
+      },
+    });
+
+    // Publish realtime event
+    realtimeHub.broadcast("global", {
+      type: "JOIN_REQUEST_SUBMITTED",
+      payload: {
+        requestId: request.id,
+        halaqaId,
+        halaqaName: request.halaqa.name,
+        studentName: user.name,
       },
     });
 

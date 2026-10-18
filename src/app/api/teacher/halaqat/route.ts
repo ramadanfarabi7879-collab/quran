@@ -114,7 +114,71 @@ export async function GET() {
       });
     }
 
-    return NextResponse.json({ halaqat });
+    const user = await getCurrentUser();
+    let studentProfileId = user?.studentProfile?.id;
+    if (user && !studentProfileId && user.role === "STUDENT") {
+      const sp = await prisma.studentProfile.findUnique({
+        where: { userId: user.id },
+      });
+      studentProfileId = sp?.id;
+    }
+
+    // Annotate each halaqa with student approval status
+    const annotatedHalaqat = await Promise.all(
+      halaqat.map(async (h) => {
+        let studentStatus = "NOT_ENROLLED"; // ENROLLED | PENDING | REJECTED | NOT_ENROLLED
+        let isApprovedBySheikh = false;
+
+        if (user) {
+          if (user.role === "TEACHER" || user.role === "ADMIN") {
+            studentStatus = "ENROLLED";
+            isApprovedBySheikh = true;
+          } else {
+            // Check active enrollment
+            const isEnrolled = h.enrollments.some(
+              (e) => (studentProfileId && e.studentId === studentProfileId) || e.student?.userId === user.id
+            );
+
+            if (isEnrolled) {
+              studentStatus = "ENROLLED";
+              isApprovedBySheikh = true;
+            } else {
+              // Check join requests
+              const pendingReq = await prisma.joinRequest.findFirst({
+                where: {
+                  halaqaId: h.id,
+                  student: { userId: user.id },
+                  status: "PENDING",
+                },
+              });
+
+              if (pendingReq) {
+                studentStatus = "PENDING";
+              } else {
+                const rejectedReq = await prisma.joinRequest.findFirst({
+                  where: {
+                    halaqaId: h.id,
+                    student: { userId: user.id },
+                    status: "REJECTED",
+                  },
+                });
+                if (rejectedReq) {
+                  studentStatus = "REJECTED";
+                }
+              }
+            }
+          }
+        }
+
+        return {
+          ...h,
+          studentStatus,
+          isApprovedBySheikh,
+        };
+      })
+    );
+
+    return NextResponse.json({ halaqat: annotatedHalaqat });
   } catch (error) {
     console.error("Get halaqat error:", error);
     return NextResponse.json({ error: "فشل استرداد الحلقات" }, { status: 500 });

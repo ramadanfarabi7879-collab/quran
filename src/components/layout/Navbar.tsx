@@ -18,6 +18,7 @@ import {
   Sparkles,
   Menu,
   Eye,
+  Lock,
 } from "lucide-react";
 import { playHalaqaStartSound } from "@/lib/sound";
 
@@ -35,6 +36,8 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
     id: string;
     title: string;
     halaqaName: string;
+    isAuthorized?: boolean;
+    authorizationStatus?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -73,6 +76,8 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
             id: data.session.id,
             title: data.session.title,
             halaqaName: data.session.halaqa?.name || "حلقة الفجر",
+            isAuthorized: data.isAuthorized,
+            authorizationStatus: data.authorizationStatus,
           });
         } else {
           setActiveSessionBanner(null);
@@ -140,13 +145,31 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Link
-              href={`/classroom/${activeSessionBanner.id}?role=${user?.role === "TEACHER" ? "teacher" : "student"}`}
-              className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition-all shadow"
-            >
-              <Video className="w-3.5 h-3.5" />
-              دخول الحلقة
-            </Link>
+            {user?.role === "TEACHER" || user?.role === "ADMIN" || activeSessionBanner.isAuthorized ? (
+              <Link
+                href={`/classroom/${activeSessionBanner.id}?role=${user?.role === "TEACHER" ? "teacher" : "student"}`}
+                className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition-all shadow"
+              >
+                <Video className="w-3.5 h-3.5" />
+                دخول الحلقة (معتمد)
+              </Link>
+            ) : activeSessionBanner.authorizationStatus === "PENDING_APPROVAL" ? (
+              <Link
+                href="/student/my-halaqat"
+                className="flex items-center gap-1.5 bg-amber-500/20 text-amber-200 border border-amber-400/40 font-bold px-3 py-1 rounded-lg text-xs transition-all"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                في انتظار موافقة الشيخ ⏳
+              </Link>
+            ) : (
+              <Link
+                href="/student/my-halaqat"
+                className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-3 py-1 rounded-lg text-xs transition-all shadow"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                طلب انضمام (بموافقة الشيخ)
+              </Link>
+            )}
             <Link
               href="/student/my-halaqat"
               className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white font-bold px-3 py-1 rounded-lg text-xs transition-all"

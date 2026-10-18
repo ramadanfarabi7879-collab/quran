@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { CalendarDays, Users, Video, Clock, Plus, CheckCircle2, Send, XCircle, Eye, UserPlus } from "lucide-react";
+import { useRealtime } from "@/components/providers/AppProviders";
+import { CalendarDays, Users, Video, Clock, Plus, CheckCircle2, Send, XCircle, Eye, UserPlus, Lock, ShieldCheck } from "lucide-react";
 
 export default function StudentHalaqatPage() {
+  const { lastEvent } = useRealtime();
   const [halaqat, setHalaqat] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [requestModal, setRequestModal] = useState<{ isOpen: boolean; halaqa: any | null }>({
@@ -32,6 +34,19 @@ export default function StudentHalaqatPage() {
   useEffect(() => {
     fetchHalaqat();
   }, []);
+
+  // Realtime listener for approval updates
+  useEffect(() => {
+    if (lastEvent) {
+      if (
+        lastEvent.type === "SCHEDULE_UPDATED" ||
+        lastEvent.type === "JOIN_REQUEST_APPROVED" ||
+        lastEvent.type === "JOIN_REQUEST_REJECTED"
+      ) {
+        fetchHalaqat();
+      }
+    }
+  }, [lastEvent]);
 
   const handleSendJoinRequest = async () => {
     if (!requestModal.halaqa) return;
@@ -93,10 +108,29 @@ export default function StudentHalaqatPage() {
                 className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm flex flex-col justify-between space-y-4"
               >
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                      {h.level}
-                    </span>
+                  <div className="flex items-center justify-between gap-1 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      {h.studentStatus === "ENROLLED" ? (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          طالب معتمد ومقبول
+                        </span>
+                      ) : h.studentStatus === "PENDING" ? (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-amber-600 animate-spin" />
+                          في انتظار موافقة الشيخ
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-amber-500" />
+                          مشروطة بموافقة الشيخ
+                        </span>
+                      )}
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                        {h.level}
+                      </span>
+                    </div>
+
                     {isLive && (
                       <span className="text-[10px] font-bold text-red-500 bg-red-50 dark:bg-red-950/40 px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
@@ -130,42 +164,67 @@ export default function StudentHalaqatPage() {
                 </div>
 
                 <div className="pt-2 flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    {/* 1. Enter Room Button (دخول الحلقة) */}
-                    <button
-                      onClick={() =>
-                        (window.location.href = `/classroom/${
-                          h.currentLiveSessionId || h.id
-                        }?role=student`)
-                      }
-                      className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 rounded-xl shadow-sm transition active:scale-95"
-                      title="دخول قاعة الحلقة الآن"
-                    >
-                      <Video className="w-3.5 h-3.5" />
-                      <span>دخول الحلقة</span>
-                    </button>
+                  {h.studentStatus === "ENROLLED" ? (
+                    <div className="flex items-center gap-2">
+                      {/* 1. Enter Room Button (دخول الحلقة) - Only for approved students */}
+                      <button
+                        onClick={() =>
+                          (window.location.href = `/classroom/${
+                            h.currentLiveSessionId || h.id
+                          }?role=student`)
+                        }
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm transition active:scale-95"
+                        title="دخول قاعة الحلقة الآن (طالب معتمد ومقبول)"
+                      >
+                        <Video className="w-3.5 h-3.5" />
+                        <span>دخول الحلقة (معتمد)</span>
+                      </button>
 
-                    {/* 2. Follow / Track (متابعة الحلقة) */}
-                    <button
-                      onClick={() =>
-                        (window.location.href = `/student/mushaf`)
-                      }
-                      className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-bold text-xs py-2 rounded-xl transition"
-                      title="متابعة المصحف وورد الحفظ"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>متابعة الحلقة</span>
-                    </button>
-                  </div>
-
-                  {/* 3. Join Request Button (انضمام إلى الحلقة) */}
-                  <button
-                    onClick={() => setRequestModal({ isOpen: true, halaqa: h })}
-                    className="w-full flex items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs py-2 rounded-xl transition"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>انضمام إلى الحلقة</span>
-                  </button>
+                      {/* 2. Follow / Track (متابعة الحلقة) */}
+                      <button
+                        onClick={() =>
+                          (window.location.href = `/student/mushaf`)
+                        }
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-bold text-xs py-2.5 rounded-xl transition"
+                        title="متابعة المصحف وورد الحفظ"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>متابعة الحلقة</span>
+                      </button>
+                    </div>
+                  ) : h.studentStatus === "PENDING" ? (
+                    <div className="space-y-2">
+                      <div className="w-full flex items-center justify-center gap-2 bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold text-xs py-2.5 rounded-xl">
+                        <Clock className="w-4 h-4 text-amber-600 animate-spin" />
+                        <span>طلبك قيد مراجعة واعتماد الشيخ ⏳</span>
+                      </div>
+                      <button
+                        onClick={() => (window.location.href = `/student/mushaf`)}
+                        className="w-full flex items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs py-2 rounded-xl transition"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>متابعة الورد القرآني</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => setRequestModal({ isOpen: true, halaqa: h })}
+                        className="w-full flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs py-2.5 rounded-xl shadow-xs transition active:scale-95"
+                        title="تقديم طلب انضمام مشروط بموافقة وقبول فضيلة الشيخ"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>طلب انضمام (مشروط بموافقة الشيخ)</span>
+                      </button>
+                      <button
+                        onClick={() => (window.location.href = `/student/mushaf`)}
+                        className="w-full flex items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs py-2 rounded-xl transition"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>متابعة تفاصيل الحلقة</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );

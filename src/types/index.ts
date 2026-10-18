@@ -91,7 +91,10 @@ export interface RealtimeEvent {
     | "VIDEO_SIGNAL"
     | "WEBRTC_SIGNAL"
     | "RECORDING_TOGGLE"
-    | "SCHEDULE_UPDATED";
+    | "SCHEDULE_UPDATED"
+    | "JOIN_REQUEST_SUBMITTED"
+    | "JOIN_REQUEST_APPROVED"
+    | "JOIN_REQUEST_REJECTED";
   payload: any;
   senderId?: string;
   channel?: string;

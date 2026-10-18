@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { realtimeHub } from "@/lib/realtime";
 
 export async function GET(req: Request) {
   try {
@@ -135,6 +136,24 @@ export async function POST(req: Request) {
         },
       });
 
+      // Realtime event to notify student screen immediately
+      realtimeHub.broadcast("global", {
+        type: "JOIN_REQUEST_APPROVED",
+        payload: {
+          studentId: request.studentId,
+          studentUserId: request.student.user.id,
+          halaqaId: request.halaqaId,
+          halaqaName: request.halaqa.name,
+        },
+      });
+      realtimeHub.broadcast("global", {
+        type: "SCHEDULE_UPDATED",
+        payload: {
+          action: "STUDENT_APPROVED",
+          message: `تم اعتماد وقبول الطالب في ${request.halaqa.name}`,
+        },
+      });
+
       return NextResponse.json({ success: true, message: "تم قبول الطالب بنجاح" });
     }
 
@@ -163,6 +182,17 @@ export async function POST(req: Request) {
           body: `تم الاعتذار عن قبول طلب الانضمام إلى ${request.halaqa.name}. السبب: ${reason || "اكتمال النصاب"}`,
           type: "JOIN_REQUEST_DECIDED",
           link: "/student/my-halaqat",
+        },
+      });
+
+      // Realtime event
+      realtimeHub.broadcast("global", {
+        type: "JOIN_REQUEST_REJECTED",
+        payload: {
+          studentId: request.studentId,
+          studentUserId: request.student.user.id,
+          halaqaId: request.halaqaId,
+          halaqaName: request.halaqa.name,
         },
       });
 
