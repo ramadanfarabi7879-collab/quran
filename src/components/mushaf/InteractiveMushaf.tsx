@@ -79,6 +79,7 @@ export function InteractiveMushaf({
   const [allowFreeNavigation, setAllowFreeNavigation] = useState(false);
   const [isLockedByServer, setIsLockedByServer] = useState(false);
   const [lockMessage, setLockMessage] = useState("");
+  const isStudentLocked = !isTeacher && (mode === "TASMEE_LOCKED" || isLockedByServer);
 
   // Active Icon Selectors Popover State (Surah, Juz, Hizb, Rub')
   const [activePopover, setActivePopover] = useState<"surah" | "juz" | "hizb" | "rub" | null>(null);
@@ -127,15 +128,18 @@ export function InteractiveMushaf({
     setHighlightedAyahs(st.highlightedAyahs || []);
     setAllowFreeNavigation(st.allowFreeNavigation);
 
-    // CRITICAL: Only update page state and reset scroll IF the page number is actually DIFFERENT!
-    if (st.currentPage !== currentPageRef.current) {
-      currentPageRef.current = st.currentPage;
-      setCurrentPage(st.currentPage);
-      setCurrentSurah(st.currentSurah);
-      setImageLoading(true);
-      setImageError(false);
-      if (mushafScrollRef.current) {
-        mushafScrollRef.current.scrollTop = 0;
+    // CRITICAL: Only force page update from server if teacher or GUIDED mode!
+    // In self-reading (VIEW mode), student navigates freely without polling resets!
+    if (isTeacher || st.mode === "GUIDED") {
+      if (st.currentPage !== currentPageRef.current) {
+        currentPageRef.current = st.currentPage;
+        setCurrentPage(st.currentPage);
+        setCurrentSurah(st.currentSurah);
+        setImageLoading(true);
+        setImageError(false);
+        if (mushafScrollRef.current) {
+          mushafScrollRef.current.scrollTop = 0;
+        }
       }
     }
 
@@ -296,7 +300,7 @@ export function InteractiveMushaf({
   const handlePageChange = (newPage: number) => {
     if (newPage < 1 || newPage > 604) return;
     if (newPage === currentPageRef.current) return;
-    if (!isTeacher && !allowFreeNavigation && mode !== "VIEW") return;
+    if (isStudentLocked) return;
 
     const matchedSurah = getSurahForPage(newPage);
     currentPageRef.current = newPage;
@@ -415,8 +419,6 @@ export function InteractiveMushaf({
     const s = sec % 60;
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
-
-  const isStudentLocked = !isTeacher && (mode === "TASMEE_LOCKED" || isLockedByServer);
 
   return (
     <div className="flex flex-col bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex-1 h-full min-h-0">
@@ -1049,7 +1051,7 @@ export function InteractiveMushaf({
                   min="1"
                   max="604"
                   value={currentPage}
-                  disabled={!isTeacher && !allowFreeNavigation}
+                  disabled={isStudentLocked}
                   onChange={(e) => handlePageChange(Number(e.target.value))}
                   className="w-12 text-center text-xs font-black bg-transparent text-amber-300 focus:outline-none"
                 />
@@ -1088,7 +1090,7 @@ export function InteractiveMushaf({
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage <= 1 || (!isTeacher && !allowFreeNavigation)}
+                  disabled={currentPage <= 1 || isStudentLocked}
                   className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 disabled:opacity-40 transition"
                   title="الصفحة السابقة"
                 >
@@ -1096,7 +1098,7 @@ export function InteractiveMushaf({
                 </button>
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage >= 604 || (!isTeacher && !allowFreeNavigation)}
+                  disabled={currentPage >= 604 || isStudentLocked}
                   className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 disabled:opacity-40 transition"
                   title="الصفحة التالية"
                 >
@@ -1245,7 +1247,7 @@ export function InteractiveMushaf({
               {/* Clickable Page Flip Overlays (Right = Next, Left = Prev) */}
               <button
                 onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage >= 604 || (!isTeacher && !allowFreeNavigation)}
+                disabled={currentPage >= 604 || isStudentLocked}
                 className="absolute right-0 top-0 bottom-0 w-12 hover:bg-black/5 opacity-0 hover:opacity-100 flex items-center justify-end pr-2 text-slate-500 transition cursor-pointer"
                 title="الصفحة التالية"
               >
@@ -1253,7 +1255,7 @@ export function InteractiveMushaf({
               </button>
               <button
                 onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage <= 1 || (!isTeacher && !allowFreeNavigation)}
+                disabled={currentPage <= 1 || isStudentLocked}
                 className="absolute left-0 top-0 bottom-0 w-12 hover:bg-black/5 opacity-0 hover:opacity-100 flex items-center justify-start pl-2 text-slate-500 transition cursor-pointer"
                 title="الصفحة السابقة"
               >
@@ -1281,7 +1283,7 @@ export function InteractiveMushaf({
             {/* 1. Button to Previous Page */}
             <button
               onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage <= 1 || (!isTeacher && !allowFreeNavigation)}
+              disabled={currentPage <= 1 || isStudentLocked}
               className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 border border-slate-700 text-xs font-bold transition shadow-sm text-slate-200 hover:text-white"
               title="الانتقال إلى الصفحة السابقة"
             >
@@ -1332,7 +1334,7 @@ export function InteractiveMushaf({
             {/* 3. Button to Next Page */}
             <button
               onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage >= 604 || (!isTeacher && !allowFreeNavigation)}
+              disabled={currentPage >= 604 || isStudentLocked}
               className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-30 border border-emerald-500 text-xs font-bold transition shadow-md shadow-emerald-900/30 text-white"
               title="الانتقال إلى الصفحة التالية"
             >
