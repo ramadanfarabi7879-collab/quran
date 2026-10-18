@@ -52,28 +52,15 @@ export async function GET(req: Request) {
       });
     }
 
-    // If still no session exists, auto-provision an active session for the default halaqa
     if (!session) {
-      let halaqa = await prisma.halaqa.findFirst({
-        where: { status: "ACTIVE" },
-        include: { teacher: { include: { user: true } } },
+      return NextResponse.json({
+        session: null,
+        isAuthorized: false,
+        authorizationStatus: "NO_ACTIVE_SESSION",
+        teacherName: "",
+        halaqaName: "",
+        halaqaId: "",
       });
-      if (!halaqa) {
-        halaqa = await prisma.halaqa.findFirst({
-          include: { teacher: { include: { user: true } } },
-        });
-      }
-
-      if (halaqa) {
-        session = await prisma.liveSession.create({
-          data: {
-            halaqaId: halaqa.id,
-            title: `حلقة القرآن المباشرة - ${halaqa.name}`,
-            status: "ACTIVE",
-          },
-          include: includeConfig,
-        });
-      }
     }
 
     const user = await getCurrentUser();
@@ -113,37 +100,30 @@ export async function GET(req: Request) {
         );
 
         if (sessionAtt?.isVerifiedByTeacher) {
+          // Student was accepted by the Sheikh for this session - can continue/re-enter seamlessly
           isAuthorized = true;
           authorizationStatus = "AUTHORIZED";
         } else if (sessionAtt?.requestedCheckIn) {
+          // Student clicked "طلب انضمام" and is waiting for Sheikh's acceptance
           isAuthorized = false;
           authorizationStatus = "PENDING_APPROVAL";
         } else {
-          const isEnrolled = session.halaqa.enrollments?.some(
-            (e: any) => e.student?.userId === effectiveUser.id || e.studentId === studentProfileId
+          const hasPending = session.halaqa.joinRequests?.some(
+            (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "PENDING"
           );
-
-          if (isEnrolled) {
-            isAuthorized = true;
-            authorizationStatus = "AUTHORIZED";
+          if (hasPending) {
+            isAuthorized = false;
+            authorizationStatus = "PENDING_APPROVAL";
           } else {
-            const hasPending = session.halaqa.joinRequests?.some(
-              (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "PENDING"
+            const hasRejected = session.halaqa.joinRequests?.some(
+              (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "REJECTED"
             );
-            if (hasPending) {
+            if (hasRejected) {
               isAuthorized = false;
-              authorizationStatus = "PENDING_APPROVAL";
+              authorizationStatus = "REJECTED";
             } else {
-              const hasRejected = session.halaqa.joinRequests?.some(
-                (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "REJECTED"
-              );
-              if (hasRejected) {
-                isAuthorized = false;
-                authorizationStatus = "REJECTED";
-              } else {
-                isAuthorized = false;
-                authorizationStatus = "NEEDS_REQUEST";
-              }
+              isAuthorized = false;
+              authorizationStatus = "NEEDS_REQUEST";
             }
           }
         }
@@ -263,9 +243,24 @@ export async function POST(req: Request) {
       });
     }
 
-    const halaqaId = halaqa.id;
+    // Ensure any previously active sessions are ended before starting a new one
+    await prisma.liveSession.updateMany({
+      where: { status: "ACTIVE" },
+      data: {
+        status: "ENDED",
+        endedAt: new Date(),
+      },
+    });
+    await prisma.halaqa.updateMany({
+      where: { isLiveNow: true },
+      data: {
+        isLiveNow: false,
+        currentLiveSessionId: null,
+      },
+    });
 
     // Create session
+    const halaqaId = halaqa.id;
     const sessionTitle = title || `جلسة ${halaqa.name} - ${new Date().toLocaleDateString("ar-SA")}`;
     const liveSession = await prisma.liveSession.create({
       data: {
@@ -408,6 +403,11 @@ export async function DELETE(req: Request) {
     });
 
     realtimeHub.broadcast(`halaqa-${session.halaqaId}`, {
+      type: "HALAQA_LIVE_ENDED",
+      payload: { sessionId, halaqaId: session.halaqaId },
+    });
+
+    realtimeHub.broadcast("global", {
       type: "HALAQA_LIVE_ENDED",
       payload: { sessionId, halaqaId: session.halaqaId },
     });

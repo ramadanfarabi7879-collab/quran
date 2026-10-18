@@ -163,6 +163,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         });
       }
     }
+    // 5. Session ended -> Dismiss student live modal immediately
+    if (lastEvent.type === "HALAQA_LIVE_ENDED") {
+      setLiveModal(null);
+    }
   }, [lastEvent, isStudent, isTeacher]);
 
   // Sheikh 1-Click Accept Session Join
@@ -288,6 +292,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               }
               return prev;
             });
+          } else {
+            // No active live session -> clear live modal immediately
+            setLiveModal(null);
           }
         }
       } catch {}

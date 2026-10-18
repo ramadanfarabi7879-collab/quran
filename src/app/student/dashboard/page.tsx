@@ -36,6 +36,7 @@ export default function StudentDashboard() {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [evaluations, setEvaluations] = useState<any[]>([]);
   const [activeSession, setActiveSession] = useState<any | null>(null);
+  const [sessionAuthStatus, setSessionAuthStatus] = useState<string>("NO_ACTIVE_SESSION");
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
@@ -63,8 +64,10 @@ export default function StudentDashboard() {
         const d = await resS.json();
         if (d.session && d.session.status === "ACTIVE") {
           setActiveSession(d.session);
+          setSessionAuthStatus(d.authorizationStatus || "NEEDS_REQUEST");
         } else {
           setActiveSession(null);
+          setSessionAuthStatus("NO_ACTIVE_SESSION");
         }
       }
     } catch (e) {
@@ -93,13 +96,18 @@ export default function StudentDashboard() {
           halaqa: { name: payload?.halaqaName || "حلقة الفجر لتحفيظ القرآن" },
           status: "ACTIVE",
         });
+        setSessionAuthStatus("NEEDS_REQUEST");
       } else if (lastEvent.type === "HALAQA_LIVE_ENDED") {
         setActiveSession(null);
+        setSessionAuthStatus("NO_ACTIVE_SESSION");
       } else if (
         lastEvent.type === "SCHEDULE_UPDATED" ||
         lastEvent.type === "SESSION_JOIN_APPROVED" ||
         lastEvent.type === "JOIN_REQUEST_APPROVED"
       ) {
+        if (lastEvent.type === "SESSION_JOIN_APPROVED" || lastEvent.type === "JOIN_REQUEST_APPROVED") {
+          setSessionAuthStatus("AUTHORIZED");
+        }
         fetchData();
       }
     }
@@ -145,11 +153,8 @@ export default function StudentDashboard() {
   const pendingHalaqat = halaqat.filter((h: any) => h.studentStatus === "PENDING");
   const hasPendingHalaqa = pendingHalaqat.length > 0;
 
-  const activeSessionHalaqa = halaqat.find((h: any) => h.id === activeSession?.halaqaId);
-  const isActiveSessionApproved = activeSession && (
-    activeSessionHalaqa ? (activeSessionHalaqa.isApprovedBySheikh || activeSessionHalaqa.studentStatus === "ENROLLED") : false
-  );
-  const isActiveSessionPending = activeSession && activeSessionHalaqa?.studentStatus === "PENDING";
+  const isActiveSessionApproved = activeSession && sessionAuthStatus === "AUTHORIZED";
+  const isActiveSessionPending = activeSession && sessionAuthStatus === "PENDING_APPROVAL";
 
   return (
     <AppShell>
@@ -230,33 +235,43 @@ export default function StudentDashboard() {
 
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Single Dynamic Action Button in Hero */}
-            {hasApprovedHalaqa ? (
-              <Link
-                href={`/classroom/${approvedHalaqat[0].currentLiveSessionId || activeSession?.id || "auto"}?role=student`}
-                className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black px-4 py-2.5 rounded-2xl text-xs shadow-lg shadow-amber-950/20 transition-transform hover:scale-105 active:scale-95"
-                title="متابعة الحلقة (طالب معتمد)"
-              >
-                <Video className="w-4 h-4" />
-                <span>متابعة الحلقة 🎥</span>
-              </Link>
-            ) : hasPendingHalaqa ? (
-              <div
-                className="flex items-center gap-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold px-4 py-2.5 rounded-2xl text-xs shadow"
-                title="طلب الانضمام قيد المراجعة لدى فضيلة الشيخ"
-              >
-                <Clock className="w-4 h-4 text-amber-400 animate-spin" />
-                <span>في انتظار قبول الشيخ ⏳</span>
-              </div>
+            {activeSession ? (
+              isActiveSessionApproved ? (
+                <Link
+                  href={`/classroom/${activeSession.id}?role=student`}
+                  className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black px-4 py-2.5 rounded-2xl text-xs shadow-lg shadow-amber-950/20 transition-transform hover:scale-105 active:scale-95"
+                  title="متابعة الحلقة (طالب معتمد ومقبول)"
+                >
+                  <Video className="w-4 h-4" />
+                  <span>متابعة الحلقة 🎥</span>
+                </Link>
+              ) : isActiveSessionPending ? (
+                <div
+                  className="flex items-center gap-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold px-4 py-2.5 rounded-2xl text-xs shadow"
+                  title="طلب الانضمام قيد المراجعة لدى فضيلة الشيخ"
+                >
+                  <Clock className="w-4 h-4 text-amber-400 animate-spin" />
+                  <span>في انتظار قبول الشيخ ⏳</span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleStudent1ClickJoin(activeSession.id, activeSession.halaqaId)}
+                  disabled={requestingSession}
+                  className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-bold px-4 py-2.5 rounded-2xl text-xs shadow transition active:scale-95 disabled:opacity-50"
+                  title="طلب الانضمام إلى الحلقة المباشرة"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>{requestingSession ? "جارٍ إرسال الطلب..." : "طلب انضمام"}</span>
+                </button>
+              )
             ) : (
-              <button
-                onClick={() => handleStudent1ClickJoin(activeSession?.id, halaqat[0]?.id)}
-                disabled={requestingSession}
-                className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-bold px-4 py-2.5 rounded-2xl text-xs shadow transition active:scale-95 disabled:opacity-50"
-                title="طلب الانضمام إلى الحلقة"
+              <Link
+                href="/student/my-halaqat"
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-2xl text-xs border border-white/10 transition"
               >
-                <UserPlus className="w-4 h-4" />
-                <span>{requestingSession ? "جارٍ إرسال الطلب..." : "طلب انضمام"}</span>
-              </button>
+                <CalendarDays className="w-4 h-4 text-emerald-300" />
+                <span>حلقاتي القرآنية</span>
+              </Link>
             )}
 
             {/* Mushaf Direct Access */}
