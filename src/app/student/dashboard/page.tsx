@@ -38,15 +38,6 @@ export default function StudentDashboard() {
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Realtime Live Session Pop-up Modal State
-  const [liveModal, setLiveModal] = useState<{
-    open: boolean;
-    sessionId: string;
-    halaqaName: string;
-    teacherName: string;
-    title?: string;
-  } | null>(null);
-
   const fetchData = async () => {
     try {
       const [resH, resA, resE, resS] = await Promise.all([
@@ -72,6 +63,8 @@ export default function StudentDashboard() {
         const d = await resS.json();
         if (d.session && d.session.status === "ACTIVE") {
           setActiveSession(d.session);
+        } else {
+          setActiveSession(null);
         }
       }
     } catch (e) {
@@ -90,19 +83,10 @@ export default function StudentDashboard() {
     if (lastEvent) {
       if (lastEvent.type === "HALAQA_LIVE_STARTED") {
         const payload = lastEvent.payload;
-        // 1. Play the Islamic notification chime with sound synthesizer
+        // 1. Play Islamic notification chime
         playHalaqaStartSound();
 
-        // 2. Open high-impact live session modal on student's screen
-        setLiveModal({
-          open: true,
-          sessionId: payload?.sessionId,
-          halaqaName: payload?.halaqaName || "حلقة الفجر لتحفيظ القرآن",
-          teacherName: payload?.teacherName || "الشيخ أحمد المنشاوي",
-          title: payload?.title,
-        });
-
-        // 3. Update active session state for persistent banner
+        // 2. Update active session state for persistent banner
         setActiveSession({
           id: payload?.sessionId,
           title: payload?.title,
@@ -111,7 +95,6 @@ export default function StudentDashboard() {
         });
       } else if (lastEvent.type === "HALAQA_LIVE_ENDED") {
         setActiveSession(null);
-        setLiveModal(null);
       } else if (
         lastEvent.type === "SCHEDULE_UPDATED" ||
         lastEvent.type === "SESSION_JOIN_APPROVED" ||
@@ -171,82 +154,6 @@ export default function StudentDashboard() {
   return (
     <AppShell>
       <div className="space-y-6">
-        {/* Realtime Live Session Pop-up Modal with Sound */}
-        {liveModal?.open && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
-            <div className="bg-gradient-to-b from-slate-900 via-islamic-950 to-slate-950 text-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border-2 border-amber-400/60 text-center relative overflow-hidden">
-              {/* Decorative background glow */}
-              <div className="absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />
-
-              {/* Live Pulsing Bell Icon */}
-              <div className="relative mx-auto w-20 h-20 mb-4 flex items-center justify-center">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60"></span>
-                <div className="relative w-20 h-20 rounded-full bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-950 flex items-center justify-center shadow-xl">
-                  <Volume2 className="w-10 h-10 animate-bounce" />
-                </div>
-              </div>
-
-              {/* Status Pill */}
-              <div className="inline-flex items-center gap-2 bg-red-600/90 text-white text-xs font-black px-4 py-1 rounded-full uppercase tracking-wider mb-3 shadow">
-                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                حلقة القرآن المباشرة بدأت الآن
-              </div>
-
-              <h2 className="text-xl sm:text-2xl font-black text-white mb-2">
-                {liveModal.halaqaName}
-              </h2>
-
-              <p className="text-slate-300 text-xs sm:text-sm mb-6 max-w-md mx-auto leading-relaxed">
-                فضيلة <span className="font-bold text-amber-300">{liveModal.teacherName}</span> بدأ الجلسة التعليمية المباشرة وينتظرك الآن داخل الغرفة الافتراضية.
-              </p>
-
-              {/* Actions */}
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                {isActiveSessionApproved ? (
-                  <button
-                    onClick={() => {
-                      setLiveModal(null);
-                      window.location.href = `/classroom/${liveModal.sessionId}?role=student`;
-                    }}
-                    className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black px-6 py-3.5 rounded-2xl text-sm shadow-xl transition-transform hover:scale-105 active:scale-95"
-                  >
-                    <Video className="w-5 h-5" />
-                    متابعة الحلقة 🎥
-                  </button>
-                ) : isActiveSessionPending ? (
-                  <div className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold px-6 py-3.5 rounded-2xl text-sm">
-                    <Clock className="w-5 h-5 text-amber-400 animate-spin" />
-                    في انتظار قبول الشيخ ⏳
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => handleStudent1ClickJoin(liveModal.sessionId)}
-                    disabled={requestingSession}
-                    className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black px-6 py-3.5 rounded-2xl text-sm shadow-xl transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
-                  >
-                    <UserPlus className="w-5 h-5" />
-                    {requestingSession ? "جارٍ إرسال الطلب..." : "طلب انضمام"}
-                  </button>
-                )}
-
-                <button
-                  onClick={() => setLiveModal(null)}
-                  className="w-full sm:w-auto px-5 py-3 rounded-2xl text-xs font-bold text-slate-400 hover:text-white hover:bg-white/10 transition"
-                >
-                  إغلاق التنبيه
-                </button>
-              </div>
-
-              {/* Sound note */}
-              <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
-                <Bell className="w-3.5 h-3.5 text-amber-400" />
-                <span>تم إطلاق رنين التنبيه الصوتي بنجاح</span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Live Halaqa Alert Banner if Teacher has started a room */}
         {activeSession && (
           <div className="bg-gradient-to-r from-emerald-600 via-islamic-800 to-emerald-700 text-white p-5 rounded-3xl shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-emerald-400/30 animate-pulse">

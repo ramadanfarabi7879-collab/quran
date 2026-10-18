@@ -56,6 +56,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     accepted?: boolean;
   } | null>(null);
 
+  // Sheikh Real-time Floating New Student Registration Toast
+  const [newStudentToast, setNewStudentToast] = useState<{
+    visible: boolean;
+    studentUserId?: string;
+    studentName?: string;
+    phone?: string;
+    time?: string;
+    isApproving?: boolean;
+    approved?: boolean;
+  } | null>(null);
+
   // Student Real-time Floating Approval Toast
   const [studentApprovalToast, setStudentApprovalToast] = useState<{
     visible: boolean;
@@ -63,6 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     sessionId?: string;
   } | null>(null);
 
+  const [dismissedSessionIds, setDismissedSessionIds] = useState<string[]>([]);
   const [requestingJoin, setRequestingJoin] = useState(false);
 
   const isStudent = user?.role === "STUDENT" || pathname.startsWith("/student");
@@ -130,15 +142,30 @@ export function AppShell({ children }: { children: ReactNode }) {
           message: p.message || "وافق فضيلة الشيخ على طلب انضمامك للحلقة المباركة",
           sessionId: p.sessionId,
         });
-        if (liveModal) {
-          setLiveModal((prev) => prev ? { ...prev, approvalStatus: "APPROVED" } : null);
-        }
+        setLiveModal((prev) => (prev ? { ...prev, approvalStatus: "APPROVED" } : null));
         setTimeout(() => setStudentApprovalToast(null), 6000);
       }
     }
-  }, [lastEvent, isStudent, isTeacher, liveModal]);
 
-  // Sheikh 1-Click Accept Handler
+    // 4. New Student Registered -> Alert Teacher immediately!
+    if (lastEvent.type === "STUDENT_REGISTRATION_SUBMITTED") {
+      const p = lastEvent.payload;
+      if (isTeacher) {
+        playTeacherJoinAlertSound();
+        setNewStudentToast({
+          visible: true,
+          studentUserId: p.studentId || p.studentUserId,
+          studentName: p.studentName || "طالب جديد",
+          phone: p.phone,
+          time: p.time || new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+          isApproving: false,
+          approved: false,
+        });
+      }
+    }
+  }, [lastEvent, isStudent, isTeacher]);
+
+  // Sheikh 1-Click Accept Session Join
   const handleTeacher1ClickAccept = async () => {
     if (!teacherJoinToast) return;
     setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: true } : null));
@@ -167,6 +194,31 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   };
 
+  // Sheikh 1-Click Approve New Student Registration
+  const handleTeacher1ClickApproveStudent = async () => {
+    if (!newStudentToast?.studentUserId) return;
+    setNewStudentToast((prev) => (prev ? { ...prev, isApproving: true } : null));
+    try {
+      const res = await fetch("/api/teacher/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "APPROVE_STUDENT_REGISTRATION",
+          studentUserId: newStudentToast.studentUserId,
+        }),
+      });
+      if (res.ok) {
+        setNewStudentToast((prev) => (prev ? { ...prev, isApproving: false, approved: true } : null));
+        setTimeout(() => setNewStudentToast(null), 3500);
+      } else {
+        alert("فشل تفعيل الحساب");
+        setNewStudentToast((prev) => (prev ? { ...prev, isApproving: false } : null));
+      }
+    } catch {
+      setNewStudentToast((prev) => (prev ? { ...prev, isApproving: false } : null));
+    }
+  };
+
   // Student 1-Click Request Join Handler
   const handleStudent1ClickJoin = async (sessionId?: string) => {
     setRequestingJoin(true);
@@ -186,10 +238,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   };
 
+  const handleDismissLiveModal = (sessionId?: string) => {
+    if (sessionId) {
+      setDismissedSessionIds((prev) => (prev.includes(sessionId) ? prev : [...prev, sessionId]));
+    }
+    setLiveModal(null);
+  };
+
   // Fallback check for active live sessions for student
   useEffect(() => {
     if (!isStudent) return;
-    let dismissedSessionId = "";
 
     const checkActive = async () => {
       try {
@@ -204,9 +262,21 @@ export function AppShell({ children }: { children: ReactNode }) {
               ? "PENDING"
               : "NOT_REQUESTED";
 
-            if (sess.id !== dismissedSessionId && (!liveModal || !liveModal.open)) {
-              setLiveModal((prev) => {
-                if (prev?.open && prev.sessionId === sess.id) return prev;
+            // If user dismissed this session, don't reopen automatically unless approved
+            if (dismissedSessionIds.includes(sess.id) && status !== "APPROVED") {
+              return;
+            }
+
+            setLiveModal((prev) => {
+              if (prev && prev.sessionId === sess.id) {
+                // Update approval status dynamically without closing
+                if (prev.approvalStatus !== status) {
+                  return { ...prev, approvalStatus: status };
+                }
+                return prev;
+              }
+
+              if (!dismissedSessionIds.includes(sess.id)) {
                 return {
                   open: true,
                   sessionId: sess.id,
@@ -215,17 +285,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                   title: sess.title,
                   approvalStatus: status,
                 };
-              });
-            }
+              }
+              return prev;
+            });
           }
         }
       } catch {}
     };
 
     checkActive();
-    const interval = setInterval(checkActive, 5000);
+    const interval = setInterval(checkActive, 4000);
     return () => clearInterval(interval);
-  }, [isStudent, liveModal]);
+  }, [isStudent, dismissedSessionIds]);
 
   return (
     <div
@@ -294,7 +365,58 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      {/* 2. Student Real-Time Floating Approval Toast */}
+      {/* 2. Sheikh Real-Time Floating New Student Registration Toast with 1-Click Approve */}
+      {newStudentToast?.visible && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-lg w-[92%] sm:w-full animate-in slide-in-from-top-4 duration-300">
+          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950 text-white rounded-3xl p-4 sm:p-5 shadow-2xl border-2 border-amber-400/80 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center shrink-0">
+                <UserPlus className="w-6 h-6 text-amber-300" />
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-black text-amber-300 uppercase tracking-wider block">
+                  ✨ طلب تسجيل طالب جديد على المنصة
+                </span>
+                <h4 className="font-black text-sm text-white">
+                  الطالب: {newStudentToast.studentName}
+                </h4>
+                <p className="text-[11px] text-slate-300 font-mono">
+                  {newStudentToast.phone ? `الجوال: ${newStudentToast.phone}` : "بانتظار اعتماد فضيلتكم وتفعيل الحساب"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {newStudentToast.approved ? (
+                <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>تم اعتماد الحساب بنجاح ✅</span>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={handleTeacher1ClickApproveStudent}
+                    disabled={newStudentToast.isApproving}
+                    className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-amber-300 hover:from-amber-300 hover:to-amber-200 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{newStudentToast.isApproving ? "جارٍ التفعيل..." : "اعتماد الحساب ✅"}</span>
+                  </button>
+                  <button
+                    onClick={() => setNewStudentToast(null)}
+                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition"
+                    title="تجاهل"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Student Real-Time Floating Approval Toast */}
       {studentApprovalToast?.visible && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] sm:w-full animate-in slide-in-from-top-4 duration-300">
           <div className="bg-gradient-to-r from-emerald-700 via-emerald-800 to-teal-800 text-white rounded-3xl p-4 shadow-2xl border-2 border-emerald-300 flex items-center justify-between gap-3">
@@ -411,7 +533,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full border-2 border-emerald-500/50 shadow-2xl overflow-hidden p-6 relative text-center">
             <button
-              onClick={() => setLiveModal(null)}
+              onClick={() => handleDismissLiveModal(liveModal.sessionId)}
               className="absolute top-4 left-4 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition"
               title="إغلاق"
             >
@@ -462,7 +584,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               )}
 
               <button
-                onClick={() => setLiveModal(null)}
+                onClick={() => handleDismissLiveModal(liveModal.sessionId)}
                 className="w-full py-2.5 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-bold transition"
               >
                 إغلاق والتذكير لاحقاً

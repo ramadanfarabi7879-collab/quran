@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
+import { useRealtime } from "@/components/providers/AppProviders";
 import {
   Users,
   Search,
@@ -16,14 +17,20 @@ import {
   FileText,
   BookOpen,
   Award,
+  UserPlus,
+  Clock,
+  Phone,
+  Mail,
 } from "lucide-react";
 
 export default function TeacherStudentsPage() {
+  const { lastEvent } = useRealtime();
   const [students, setStudents] = useState<any[]>([]);
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
   const [halaqat, setHalaqat] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"ACTIVE" | "REQUESTS">("ACTIVE");
+  const [activeTab, setActiveTab] = useState<"ACTIVE" | "PENDING_REGISTRATIONS" | "REQUESTS">("ACTIVE");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedHalaqaFilter, setSelectedHalaqaFilter] = useState("ALL");
 
@@ -72,6 +79,7 @@ export default function TeacherStudentsPage() {
         const d = await resS.json();
         setStudents(d.students || []);
         setJoinRequests(d.joinRequests || []);
+        setPendingRegistrations(d.pendingRegistrations || []);
       }
       if (resH.ok) {
         const d = await resH.json();
@@ -87,6 +95,59 @@ export default function TeacherStudentsPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "pending") {
+        setActiveTab("PENDING_REGISTRATIONS");
+      } else if (params.get("tab") === "requests") {
+        setActiveTab("REQUESTS");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (
+      lastEvent?.type === "STUDENT_REGISTRATION_SUBMITTED" ||
+      lastEvent?.type === "STUDENT_REGISTRATION_APPROVED" ||
+      lastEvent?.type === "JOIN_REQUEST_SUBMITTED" ||
+      lastEvent?.type === "SESSION_JOIN_REQUESTED"
+    ) {
+      fetchData();
+    }
+  }, [lastEvent]);
+
+  const handleApproveRegistration = async (studentUserId: string) => {
+    try {
+      const res = await fetch("/api/teacher/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "APPROVE_STUDENT_REGISTRATION", studentUserId }),
+      });
+      if (res.ok) {
+        fetchData();
+      } else {
+        alert("فشل تفعيل الحساب");
+      }
+    } catch {
+      alert("حدث خطأ أثناء تفعيل الحساب");
+    }
+  };
+
+  const handleRejectRegistration = async (studentUserId: string) => {
+    if (!confirm("هل أنت متأكد من رفض طلب التسجيل وحذفه؟")) return;
+    try {
+      const res = await fetch("/api/teacher/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "REJECT_STUDENT_REGISTRATION", studentUserId }),
+      });
+      if (res.ok) {
+        fetchData();
+      }
+    } catch {}
+  };
 
   const handleAcceptRequest = async (requestId: string) => {
     try {
@@ -207,10 +268,10 @@ export default function TeacherStudentsPage() {
             </p>
           </div>
 
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
             <button
               onClick={() => setActiveTab("ACTIVE")}
-              className={`px-4 py-2 rounded-lg transition ${
+              className={`px-3 sm:px-4 py-2 rounded-lg transition ${
                 activeTab === "ACTIVE"
                   ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow"
                   : "text-slate-600 dark:text-slate-400"
@@ -219,14 +280,27 @@ export default function TeacherStudentsPage() {
               الطلاب المقيدين ({students.length})
             </button>
             <button
+              onClick={() => setActiveTab("PENDING_REGISTRATIONS")}
+              className={`px-3 sm:px-4 py-2 rounded-lg transition relative ${
+                activeTab === "PENDING_REGISTRATIONS"
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow"
+                  : "text-slate-600 dark:text-slate-400"
+              }`}
+            >
+              طلبات تسجيل الطلاب الجدد ({pendingRegistrations.length})
+              {pendingRegistrations.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab("REQUESTS")}
-              className={`px-4 py-2 rounded-lg transition relative ${
+              className={`px-3 sm:px-4 py-2 rounded-lg transition relative ${
                 activeTab === "REQUESTS"
                   ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow"
                   : "text-slate-600 dark:text-slate-400"
               }`}
             >
-              طلبات الانضمام ({pendingRequests.length})
+              طلبات الانضمام للحلقات ({pendingRequests.length})
               {pendingRequests.length > 0 && (
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
               )}
@@ -406,7 +480,118 @@ export default function TeacherStudentsPage() {
           </div>
         )}
 
-        {/* Tab 2: Join Requests */}
+        {/* Tab 2: New Student Registrations (Requires Sheikh Approval) */}
+        {activeTab === "PENDING_REGISTRATIONS" && (
+          <div className="space-y-4">
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <UserPlus className="w-4 h-4 text-emerald-600" />
+                  طلبات تسجيل الطلاب الجدد المعلقة لدى فضيلة الشيخ
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  الطلاب الذين أنشأوا حسابات جديدة عبر صفحة التسجيل وينتظرون مراجعتك واعتمادهم للبدء في الحلقات.
+                </p>
+              </div>
+              <span className="text-xs font-bold px-3 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                إجمالي المعلق: {pendingRegistrations.length} طالب
+              </span>
+            </div>
+
+            {pendingRegistrations.length === 0 ? (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h4 className="font-black text-sm text-slate-800 dark:text-slate-200">
+                  لا توجد طلبات تسجيل طلاب معلقة حالياً
+                </h4>
+                <p className="text-xs text-slate-400">
+                  كافة حسابات الطلاب مسجلة ومفعلة بنجاح، وسيظهر هنا أي طالب جديد فور تسجيله.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {pendingRegistrations.map((stu) => (
+                  <div
+                    key={stu.id}
+                    className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-emerald-500/40 p-5 shadow-sm space-y-4 relative overflow-hidden"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-500 text-white flex items-center justify-center font-black text-base shadow-md">
+                          {stu.name?.[0] || "ط"}
+                        </div>
+                        <div>
+                          <h4 className="font-black text-sm text-slate-900 dark:text-slate-100">
+                            {stu.name}
+                          </h4>
+                          <span className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 font-mono">
+                            <Mail className="w-3 h-3" />
+                            {stu.email}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 flex items-center gap-1">
+                        <Clock className="w-3 h-3 animate-spin" />
+                        بانتظار الاعتماد
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-xs">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">رقم الجوال:</span>
+                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                          {stu.phone || "غير محدد"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">تاريخ التسجيل:</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200">
+                          {new Date(stu.createdAt).toLocaleDateString("ar-SA")}
+                        </span>
+                      </div>
+                      {stu.studentProfile?.guardianName && (
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">ولي الأمر:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                            {stu.studentProfile.guardianName}
+                          </span>
+                        </div>
+                      )}
+                      {stu.studentProfile?.guardianPhone && (
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">هاتف الولي:</span>
+                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {stu.studentProfile.guardianPhone}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        onClick={() => handleRejectRegistration(stu.id)}
+                        className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"
+                      >
+                        رفض الطلب ✕
+                      </button>
+                      <button
+                        onClick={() => handleApproveRegistration(stu.id)}
+                        className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md transition active:scale-95"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>اعتماد وتفعيل الحساب ✅</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 3: Join Requests */}
         {activeTab === "REQUESTS" && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

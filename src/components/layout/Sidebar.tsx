@@ -21,6 +21,9 @@ import {
   BookmarkCheck,
   GraduationCap,
   X,
+  LogOut,
+  LogIn,
+  UserPlus,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -30,7 +33,7 @@ interface SidebarProps {
 
 export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   const isStudentRoute = pathname?.startsWith("/student");
   const isAdminRoute = pathname?.startsWith("/admin");
@@ -158,9 +161,41 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
         })}
       </nav>
 
-      {/* Footer Info */}
-      <div className="p-4 border-t border-slate-100 dark:border-slate-800/80 text-center">
-        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+      {/* Footer Info & Logout */}
+      <div className="p-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
+        {user ? (
+          <button
+            onClick={() => {
+              logout();
+              onClose?.();
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 text-xs font-bold border border-red-200/80 dark:border-red-900/50 transition active:scale-95 shadow-sm"
+            title="تسجيل الخروج من المنصة"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>تسجيل الخروج</span>
+          </button>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              href="/login"
+              onClick={() => onClose?.()}
+              className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl bg-islamic-800 text-white hover:bg-islamic-700 text-xs font-bold transition shadow-sm"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>دخول</span>
+            </Link>
+            <Link
+              href="/register"
+              onClick={() => onClose?.()}
+              className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold transition"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>تسجيل</span>
+            </Link>
+          </div>
+        )}
+        <p className="text-[10px] text-center text-slate-400 dark:text-slate-500">
           نظام ورتّل للتحفيظ عن بُعد v1.0
         </p>
       </div>

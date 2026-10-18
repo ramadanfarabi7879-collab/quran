@@ -72,10 +72,23 @@ export async function GET(req: Request) {
       orderBy: { createdAt: "desc" },
     });
 
+    // 4. Pending New Student Registrations (isActive: false)
+    const pendingRegistrations = await prisma.user.findMany({
+      where: {
+        role: "STUDENT",
+        isActive: false,
+      },
+      include: {
+        studentProfile: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
     return NextResponse.json({
       students: enrollments,
       deletedStudents,
       joinRequests,
+      pendingRegistrations,
     });
   } catch (error) {
     console.error("Get students error:", error);
@@ -309,6 +322,61 @@ export async function POST(req: Request) {
         },
       });
       return NextResponse.json({ success: true, message: "تم استرجاع الطالب وإعادة تفعيله" });
+    }
+
+    // 7. Approve New Student Registration (Activate Account)
+    if (action === "APPROVE_STUDENT_REGISTRATION") {
+      const studentUserId = body.studentUserId;
+      if (!studentUserId) {
+        return NextResponse.json({ error: "معرف الطالب مطلوب" }, { status: 400 });
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id: studentUserId },
+        data: { isActive: true },
+        include: { studentProfile: true },
+      });
+
+      // Send DB notification to student
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: studentUserId,
+            title: "تم اعتماد وتفعيل حسابك بنجاح ✅",
+            body: "مرحباً بك! وافق فضيلة الشيخ أحمد علي على اعتماد حسابك في الأكاديمية المباركة. يمكنك الآن الدخول ومتابعة الحلقات.",
+            type: "ACCOUNT_APPROVED",
+            link: "/student/dashboard",
+          },
+        });
+      } catch (err) {
+        console.error("Failed to notify approved student:", err);
+      }
+
+      // Broadcast realtime event
+      realtimeHub.broadcast("global", {
+        type: "STUDENT_REGISTRATION_APPROVED",
+        payload: {
+          studentUserId,
+          studentName: updatedUser.name,
+          message: "تم اعتماد وتفعيل حساب الطالب بنجاح",
+        },
+      });
+
+      return NextResponse.json({ success: true, message: "تم اعتماد وتفعيل حساب الطالب بنجاح" });
+    }
+
+    // 8. Reject New Student Registration
+    if (action === "REJECT_STUDENT_REGISTRATION") {
+      const studentUserId = body.studentUserId;
+      if (!studentUserId) {
+        return NextResponse.json({ error: "معرف الطالب مطلوب" }, { status: 400 });
+      }
+
+      await prisma.user.delete({
+        where: { id: studentUserId },
+      });
+
+      return NextResponse.json({ success: true, message: "تم رفض وحذف طلب التسجيل" });
     }
 
     return NextResponse.json({ error: "إجراء غير معروف" }, { status: 400 });

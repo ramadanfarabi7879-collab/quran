@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
-import { useAuth } from "@/components/providers/AppProviders";
+import { useAuth, useRealtime } from "@/components/providers/AppProviders";
 import {
   Users,
   CalendarDays,
@@ -19,15 +19,18 @@ import {
   Sparkles,
   Shield,
   ShieldCheck,
+  UserPlus,
 } from "lucide-react";
 import { ScheduleBoardWidget } from "@/components/schedule/ScheduleBoardWidget";
 
 
 export default function TeacherDashboard() {
   const { user } = useAuth();
+  const { lastEvent } = useRealtime();
   const [halaqat, setHalaqat] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [startingSession, setStartingSession] = useState(false);
@@ -94,6 +97,7 @@ export default function TeacherDashboard() {
         const d = await resS.json();
         setStudents(d.students || []);
         setJoinRequests(d.joinRequests?.filter((r: any) => r.status === "PENDING") || []);
+        setPendingRegistrations(d.pendingRegistrations || []);
       }
       if (resA.ok) {
         const d = await resA.json();
@@ -109,6 +113,37 @@ export default function TeacherDashboard() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (
+      lastEvent?.type === "STUDENT_REGISTRATION_SUBMITTED" ||
+      lastEvent?.type === "STUDENT_REGISTRATION_APPROVED" ||
+      lastEvent?.type === "SESSION_JOIN_REQUESTED" ||
+      lastEvent?.type === "JOIN_REQUEST_SUBMITTED"
+    ) {
+      fetchData();
+    }
+  }, [lastEvent]);
+
+  const handleApproveRegistration = async (studentUserId: string) => {
+    try {
+      const res = await fetch("/api/teacher/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "APPROVE_STUDENT_REGISTRATION",
+          studentUserId,
+        }),
+      });
+      if (res.ok) {
+        fetchData();
+      } else {
+        alert("فشل تفعيل الحساب");
+      }
+    } catch {
+      alert("حدث خطأ أثناء تفعيل الحساب");
+    }
+  };
 
   const handleStartSessionNow = async () => {
     const targetHalaqaId = selectedHalaqaId || halaqat[0]?.id || "auto";
@@ -464,6 +499,55 @@ export default function TeacherDashboard() {
             <span className="text-[11px] text-emerald-600 font-semibold block mt-1">معدل حضور مرتفع</span>
           </div>
         </div>
+
+        {/* Pending New Student Registrations Alert (Requires Sheikh Approval) */}
+        {pendingRegistrations.length > 0 && (
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/30 border-2 border-emerald-500/60 rounded-3xl p-4 sm:p-5 shadow-md">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-black text-xs sm:text-sm text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-emerald-600 animate-pulse" />
+                طلبات تسجيل طلاب جدد على المنصة بحاجة لاعتمادك ({pendingRegistrations.length})
+              </span>
+              <Link
+                href="/teacher/students?tab=pending"
+                className="text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:underline"
+              >
+                إدارة كافة الطلبات ←
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {pendingRegistrations.map((stu) => (
+                <div
+                  key={stu.id}
+                  className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl flex items-center justify-between border border-emerald-200 dark:border-slate-800 shadow-sm"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold">
+                      {stu.name?.[0] || "ط"}
+                    </div>
+                    <div>
+                      <span className="block text-xs font-black text-slate-900 dark:text-slate-100">
+                        {stu.name}
+                      </span>
+                      <span className="block text-[11px] text-slate-500 font-mono">
+                        {stu.phone || stu.email}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleApproveRegistration(stu.id)}
+                      className="flex items-center gap-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow transition active:scale-95"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>اعتماد وتفعيل ✅</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Pending Requests Alert if any */}
         {joinRequests.length > 0 && (

@@ -22,8 +22,12 @@ export async function POST(req: Request) {
     }
 
     if (!user.isActive) {
+      const msg =
+        user.role === "STUDENT"
+          ? "طلبك لا يزال قيد المراجعة والاعتماد لدى فضيلة الشيخ أحمد علي. سيتم تفعيل حسابك فور الموافقة عليه، ويمكنك التواصل مع إدارة المنصة للمتابعة."
+          : "هذا الحساب موقوف، يرجى التواصل مع إدارة المنصة";
       return NextResponse.json(
-        { error: "هذا الحساب موقوف، يرجى التواصل مع إدارة المنصة" },
+        { error: msg, isPendingApproval: user.role === "STUDENT" },
         { status: 403 }
       );
     }

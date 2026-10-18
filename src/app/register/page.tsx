@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, User, Mail, Lock, Phone, GraduationCap } from "lucide-react";
+import { BookOpen, User, Mail, Lock, Phone, GraduationCap, CheckCircle2, Clock } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -16,6 +16,7 @@ export default function RegisterPage() {
   const [guardianPhone, setGuardianPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [submittedPending, setSubmittedPending] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,8 +42,13 @@ export default function RegisterPage() {
       if (!res.ok) {
         setError(data.error || "فشل إنشاء الحساب");
       } else {
-        if (role === "TEACHER") router.push("/teacher/dashboard");
-        else router.push("/student/dashboard");
+        if (data.requiresApproval) {
+          setSubmittedPending(true);
+        } else if (role === "TEACHER") {
+          router.push("/teacher/dashboard");
+        } else {
+          router.push("/student/dashboard");
+        }
       }
     } catch {
       setError("حدث خطأ أثناء الاتصال بالخادم");
@@ -50,6 +56,59 @@ export default function RegisterPage() {
       setLoading(false);
     }
   };
+
+  if (submittedPending) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <Link href="/" className="inline-flex items-center gap-2 mb-4 group">
+            <div className="w-12 h-12 rounded-2xl bg-islamic-800 text-gold-accent flex items-center justify-center shadow-lg border border-gold-accent/30 group-hover:scale-105 transition-transform">
+              <BookOpen className="w-6 h-6" />
+            </div>
+            <span className="font-black text-2xl text-islamic-800 dark:text-emerald-400">
+              وَرَتِّلْ
+            </span>
+          </Link>
+        </div>
+
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white dark:bg-slate-900 py-8 px-6 sm:px-8 shadow-2xl rounded-3xl border-2 border-emerald-500/50 text-center space-y-5">
+            <div className="w-16 h-16 rounded-3xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto shadow-inner">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+
+            <div>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 font-bold text-xs mb-2">
+                <Clock className="w-3.5 h-3.5 animate-spin" />
+                طلبك قيد المراجعة والاعتماد لدى فضيلة الشيخ
+              </span>
+              <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-2">
+                تم تسجيل بياناتك بنجاح!
+              </h2>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
+                مرحباً بك يا <strong className="text-emerald-600">{name}</strong>. تم إرسال إشعار فوري لفضيلة الشيخ أحمد علي لمراجعة بياناتك وتفعيل حسابك.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400 text-right space-y-1">
+              <div>البريد المسجل: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{email}</span></div>
+              {phone && <div>رقم الجوال: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{phone}</span></div>}
+              <div>الحالة: <span className="font-bold text-amber-600">بانتظار موافقة المعلم</span></div>
+            </div>
+
+            <div className="pt-2">
+              <Link
+                href="/login"
+                className="w-full inline-flex items-center justify-center py-3 px-4 rounded-xl bg-islamic-800 hover:bg-islamic-700 text-white font-bold text-xs shadow-md transition"
+              >
+                الذهاب إلى صفحة تسجيل الدخول
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8">

@@ -19,6 +19,7 @@ import {
   Menu,
   Eye,
   Lock,
+  UserPlus,
 } from "lucide-react";
 import { playHalaqaStartSound } from "@/lib/sound";
 
@@ -388,20 +389,28 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
                 </Link>
                 <button
                   onClick={logout}
-                  title="تسجيل الخروج"
-                  className="p-2 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition"
+                  title="تسجيل الخروج من المنصة"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 font-bold text-xs border border-red-200 dark:border-red-900/60 shadow-sm transition-all active:scale-95"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>تسجيل الخروج</span>
                 </button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
                 <Link
                   href="/login"
-                  className="text-xs font-bold text-white bg-islamic-800 hover:bg-islamic-700 px-4 py-2 rounded-xl shadow transition flex items-center gap-1.5"
+                  className="text-xs font-bold text-white bg-islamic-800 hover:bg-islamic-700 px-3.5 py-2 rounded-xl shadow transition flex items-center gap-1.5"
                 >
                   <UserCheck className="w-3.5 h-3.5" />
-                  تسجيل الدخول
+                  <span>تسجيل الدخول</span>
+                </Link>
+                <Link
+                  href="/register"
+                  className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 px-3.5 py-2 rounded-xl transition flex items-center gap-1.5"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>حساب جديد</span>
                 </Link>
               </div>
             )}
