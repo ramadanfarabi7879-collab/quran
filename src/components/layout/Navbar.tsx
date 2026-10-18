@@ -145,38 +145,38 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {user?.role === "TEACHER" || user?.role === "ADMIN" || activeSessionBanner.isAuthorized ? (
+            {user?.role === "TEACHER" || user?.role === "ADMIN" ? (
               <Link
-                href={`/classroom/${activeSessionBanner.id}?role=${user?.role === "TEACHER" ? "teacher" : "student"}`}
-                className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition-all shadow"
+                href={`/classroom/${activeSessionBanner.id}?role=${user?.role === "TEACHER" ? "teacher" : "admin"}`}
+                className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs transition-all shadow"
               >
                 <Video className="w-3.5 h-3.5" />
-                دخول الحلقة (معتمد)
+                دخول الغرفة (بث مباشر)
+              </Link>
+            ) : activeSessionBanner.isAuthorized ? (
+              <Link
+                href={`/classroom/${activeSessionBanner.id}?role=student`}
+                className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-4 py-1.5 rounded-xl text-xs transition-all shadow"
+              >
+                <Video className="w-3.5 h-3.5" />
+                متابعة الحلقة 🎥
               </Link>
             ) : activeSessionBanner.authorizationStatus === "PENDING_APPROVAL" ? (
-              <Link
-                href="/student/my-halaqat"
-                className="flex items-center gap-1.5 bg-amber-500/20 text-amber-200 border border-amber-400/40 font-bold px-3 py-1 rounded-lg text-xs transition-all"
+              <div
+                className="flex items-center gap-1.5 bg-amber-500/20 text-amber-200 border border-amber-400/40 font-bold px-3.5 py-1.5 rounded-xl text-xs"
               >
-                <Clock className="w-3.5 h-3.5" />
-                في انتظار موافقة الشيخ ⏳
-              </Link>
+                <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                في انتظار قبول الشيخ ⏳
+              </div>
             ) : (
               <Link
                 href="/student/my-halaqat"
-                className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-3 py-1 rounded-lg text-xs transition-all shadow"
+                className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs transition-all shadow"
               >
                 <Lock className="w-3.5 h-3.5" />
-                طلب انضمام (بموافقة الشيخ)
+                طلب انضمام
               </Link>
             )}
-            <Link
-              href="/student/my-halaqat"
-              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white font-bold px-3 py-1 rounded-lg text-xs transition-all"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              متابعة الحلقة
-            </Link>
           </div>
         </div>
       )}
@@ -223,50 +223,46 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
             </div>
           </div>
 
-          {/* Quick Demo Switcher Bar (Crucial for Pair Evaluation) */}
-          <div className="hidden lg:flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium px-2 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-gold-accent" />
-              تبديل سريع:
-            </span>
-            <button
-              onClick={() => switchUser("TEACHER")}
-              className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${
-                user?.role === "TEACHER"
-                  ? "bg-islamic-800 text-white shadow"
-                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              الشيخ المنشاوي (معلم)
-            </button>
-            <button
-              onClick={() => switchUser("STUDENT", "student@quran.com")}
-              className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${
-                user?.role === "STUDENT"
-                  ? "bg-emerald-600 text-white shadow"
-                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              عبد الرحمن (طالب)
-            </button>
-            <button
-              onClick={() => switchUser("ADMIN")}
-              className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${
-                user?.role === "ADMIN"
-                  ? "bg-amber-600 text-white shadow"
-                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              مدير المنصة (أدمن)
-            </button>
-            <Link
-              href="/simulation"
-              className="text-xs px-2.5 py-1 rounded-lg font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 shadow flex items-center gap-1 transition"
-            >
-              <Video className="w-3.5 h-3.5" />
-              المحاكاة الحية (شاشتين)
-            </Link>
-          </div>
+          {/* Quick Demo Switcher Bar: STRICTLY RESERVED FOR ADMIN (Hidden for Students & Teachers) */}
+          {user?.role === "ADMIN" && (
+            <div className="hidden lg:flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium px-2 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-gold-accent" />
+                تحكم المدير العام:
+              </span>
+              <Link
+                href="/admin/dashboard"
+                className="text-xs px-2.5 py-1 rounded-lg font-bold bg-amber-600 text-white shadow hover:bg-amber-500 transition"
+              >
+                لوحة الإدارة
+              </Link>
+              <Link
+                href="/teacher/dashboard"
+                className="text-xs px-2.5 py-1 rounded-lg font-medium bg-islamic-800 text-white shadow hover:bg-islamic-700 transition"
+              >
+                أدوات المعلم
+              </Link>
+              <button
+                onClick={() => switchUser("TEACHER")}
+                className="text-xs px-2.5 py-1 rounded-lg font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+              >
+                عرض كمعلم
+              </button>
+              <button
+                onClick={() => switchUser("STUDENT", "student@quran.com")}
+                className="text-xs px-2.5 py-1 rounded-lg font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+              >
+                عرض كطالب
+              </button>
+              <Link
+                href="/simulation"
+                className="text-xs px-2.5 py-1 rounded-lg font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 shadow flex items-center gap-1 transition"
+              >
+                <Video className="w-3.5 h-3.5" />
+                المحاكاة الحية
+              </Link>
+            </div>
+          )}
 
           {/* Right actions: Notifications, Dark mode, User profile */}
           <div className="flex items-center gap-2 sm:gap-3">
@@ -402,15 +398,10 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
               <div className="flex items-center gap-2">
                 <Link
                   href="/login"
-                  className="text-xs font-bold text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                  className="text-xs font-bold text-white bg-islamic-800 hover:bg-islamic-700 px-4 py-2 rounded-xl shadow transition flex items-center gap-1.5"
                 >
+                  <UserCheck className="w-3.5 h-3.5" />
                   تسجيل الدخول
-                </Link>
-                <Link
-                  href="/register"
-                  className="text-xs font-bold text-white bg-islamic-800 hover:bg-islamic-700 px-3.5 py-1.5 rounded-lg shadow transition"
-                >
-                  حساب جديد
                 </Link>
               </div>
             )}

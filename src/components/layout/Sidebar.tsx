@@ -71,11 +71,19 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   ];
 
   const adminNav = [
-    { name: "لوحة المدير العامة", href: "/admin/dashboard", icon: LayoutDashboard },
-    { name: "إدارة المستخدمين والمعلمين", href: "/admin/users", icon: Users },
-    { name: "إدارة الحلقات الشاملة", href: "/teacher/halaqat", icon: CalendarDays },
+    { name: "لوحة الإدارة الشاملة والصلاحيات", href: "/admin/dashboard", icon: LayoutDashboard },
+    { name: "لوحة الحلقات والتعليم المباشر", href: "/teacher/dashboard", icon: Video },
+    { name: "إدارة المستخدمين والمعلمين", href: "/admin/dashboard?tab=USERS", icon: Users },
+    { name: "إدارة الحلقات والمواعيد", href: "/teacher/halaqat", icon: CalendarDays },
+    { name: "إدارة الطلاب وطلبات الانضمام", href: "/teacher/students", icon: Users },
+    { name: "المصحف التفاعلي والتسميع", href: "/teacher/mushaf", icon: BookOpen },
+    { name: "الواجبات والتكليفات", href: "/teacher/assignments", icon: FileCheck2 },
+    { name: "سجل الحفظ والتقييم", href: "/teacher/evaluations", icon: Award },
+    { name: "حضور وغياب الحلقات", href: "/teacher/attendance", icon: CheckSquare },
+    { name: "المكتبة الرقمية", href: "/teacher/library", icon: Library },
+    { name: "تسجيلات الحلقات", href: "/teacher/recordings", icon: Video },
     { name: "إعدادات الهوية والمنصة", href: "/admin/settings", icon: Settings },
-    { name: "سجل التدقيق والعمليات", href: "/admin/audit", icon: ShieldAlert },
+    { name: "سجل التدقيق والرقابة", href: "/admin/audit", icon: ShieldAlert },
   ];
 
   const navItems = role === "ADMIN" ? adminNav : role === "STUDENT" ? studentNav : teacherNav;

@@ -17,6 +17,8 @@ import {
   ArrowUpRight,
   TrendingUp,
   Sparkles,
+  Shield,
+  ShieldCheck,
 } from "lucide-react";
 import { ScheduleBoardWidget } from "@/components/schedule/ScheduleBoardWidget";
 
@@ -120,17 +122,28 @@ export default function TeacherDashboard() {
           <div className="relative z-10">
             <span className="text-amber-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mb-1">
               <Sparkles className="w-3.5 h-3.5" />
-              لوحة تحكم المعلم والمقرئ
+              {user?.role === "ADMIN" ? "لوحة الإشراف الإداري والتعليم المدمج" : "لوحة تحكم المعلم والمقرئ"}
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              أهلاً وسهلاً، {user?.name || "فضيلة الشيخ"}
+              أهلاً وسهلاً، {user?.name || (user?.role === "ADMIN" ? "مدير المنصة" : "فضيلة الشيخ")}
             </h1>
             <p className="text-slate-300 text-xs sm:text-sm mt-1 max-w-xl leading-relaxed">
-              تحكم كامل في الحلقات اليومية، واجتماعات الفيديو المباشرة، والمصحف التفاعلي بوضع التسميع المغلق.
+              {user?.role === "ADMIN"
+                ? "بصفتك مديراً للنظام، تمتلك كامل صلاحيات الإشراف، التعديل والحذف، وبدء الحلقات والتحكم بالمعلمين والطلاب."
+                : "تحكم كامل في الحلقات اليومية، واجتماعات الفيديو المباشرة، والمصحف التفاعلي بوضع التسميع المغلق."}
             </p>
           </div>
 
           <div className="relative z-10 flex flex-wrap items-center gap-3">
+            {user?.role === "ADMIN" && (
+              <Link
+                href="/admin/dashboard"
+                className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-3 rounded-2xl shadow-lg transition text-sm"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                لوحة الصلاحيات والإدارة
+              </Link>
+            )}
             <button
               onClick={() => setShowSessionModal(true)}
               className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 hover:to-gold-accent text-slate-950 font-black px-5 py-3 rounded-2xl shadow-lg transition-transform hover:scale-105 active:scale-95 text-sm"
@@ -146,6 +159,39 @@ export default function TeacherDashboard() {
             </Link>
           </div>
         </div>
+
+        {/* Admin Supervisor Elevated Banner */}
+        {user?.role === "ADMIN" && (
+          <div className="bg-amber-500/10 border-2 border-amber-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shrink-0">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="font-bold text-slate-900 dark:text-slate-100 block text-sm">
+                  وضع التحكم والإشراف الإداري الشامل مفعل
+                </span>
+                <span className="text-slate-600 dark:text-slate-300">
+                  يمكنك إدارة أي حلقة، تعيين أو تعديل المعلمين، وبدء الجلسات المباشرة، وحذف وتعديل المواعيد، وتخصيص صلاحيات الطلاب.
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                href="/admin/dashboard?tab=USERS"
+                className="px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 text-white font-bold text-xs hover:bg-slate-800 transition"
+              >
+                تعديل الصلاحيات
+              </Link>
+              <Link
+                href="/teacher/halaqat"
+                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition"
+              >
+                إدارة الحلقات الشاملة
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* Modal: Start Session Now */}
         {showSessionModal && (

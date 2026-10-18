@@ -504,54 +504,36 @@ export default function StudentDashboard() {
                 </div>
               </div>
 
-              {/* Action Buttons: دخول الحلقة - متابعة الحلقة - انضمام */}
-              {/* Action Buttons: Conditioned upon Sheikh approval */}
-              <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center gap-2">
+              {/* Single Dynamic Action Button: طلب انضمام -> في انتظار قبول الشيخ ⏳ -> متابعة الحلقة 🎥 */}
+              <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
                 {hasApprovedHalaqa ? (
                   <Link
                     href={`/classroom/${approvedHalaqat[0].currentLiveSessionId || approvedHalaqat[0].id}?role=student`}
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 rounded-xl shadow-sm transition active:scale-95"
-                    title="دخول قاعة الحلقة الآن (طالب معتمد)"
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black text-xs py-3 rounded-2xl shadow-md transition-transform hover:scale-102 active:scale-98"
+                    title="متابعة الحلقة (طالب معتمد)"
                   >
-                    <Video className="w-3.5 h-3.5" />
-                    <span>دخول الحلقة</span>
+                    <Video className="w-4 h-4" />
+                    <span>متابعة الحلقة 🎥</span>
                   </Link>
                 ) : hasPendingHalaqa ? (
-                  <Link
-                    href="/student/my-halaqat"
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-bold text-xs py-2 rounded-xl transition"
+                  <div
+                    className="w-full flex items-center justify-center gap-2 bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold text-xs py-3 rounded-2xl"
                     title="طلبك قيد موافقة الشيخ"
                   >
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>في انتظار موافقة الشيخ</span>
-                  </Link>
+                    <Clock className="w-4 h-4 text-amber-600 animate-spin" />
+                    <span>في انتظار قبول الشيخ ⏳</span>
+                  </div>
                 ) : (
-                  <Link
-                    href="/student/my-halaqat"
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs py-2 rounded-xl shadow-sm transition active:scale-95"
-                    title="طلب انضمام للحلقة مشروط بموافقة وقبول الشيخ"
+                  <button
+                    onClick={() => handleStudent1ClickJoin(undefined, halaqat[0]?.id)}
+                    disabled={requestingSession}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs py-3 rounded-2xl shadow transition-transform hover:scale-102 active:scale-98 disabled:opacity-50"
+                    title="طلب الانضمام إلى الحلقة"
                   >
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>طلب انضمام (بموافقة الشيخ)</span>
-                  </Link>
+                    <UserPlus className="w-4 h-4" />
+                    <span>{requestingSession ? "جارٍ إرسال الطلب للشيخ..." : "طلب انضمام"}</span>
+                  </button>
                 )}
-
-                <Link
-                  href="/student/my-halaqat"
-                  className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-bold text-xs py-2 rounded-xl transition"
-                  title="متابعة الحلقة والجدول"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>متابعة الحلقة</span>
-                </Link>
-
-                <Link
-                  href="/student/my-halaqat"
-                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition"
-                  title="طلب انضمام لحلقة أخرى"
-                >
-                  <UserPlus className="w-4 h-4" />
-                </Link>
               </div>
             </div>
           </div>

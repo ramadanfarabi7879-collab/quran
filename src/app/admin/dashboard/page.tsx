@@ -34,6 +34,11 @@ import {
   Mail,
   GraduationCap,
   Sparkles,
+  Video,
+  Play,
+  Radio,
+  Plus,
+  Clock,
 } from "lucide-react";
 
 interface UserPermissions {
@@ -84,7 +89,7 @@ export default function AdminDashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<"ALL" | "ADMIN" | "TEACHER" | "STUDENT">("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
-  const [activeTab, setActiveTab] = useState<"USERS" | "POLICIES" | "AUDIT">("USERS");
+  const [activeTab, setActiveTab] = useState<"USERS" | "HALAQAT" | "POLICIES" | "AUDIT">("USERS");
 
   // Notifications / Alert message
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -117,6 +122,26 @@ export default function AdminDashboardPage() {
   });
   const [savingCreate, setSavingCreate] = useState(false);
 
+  // Halaqat Management State (Admin Supervisor Control)
+  const [halaqat, setHalaqat] = useState<any[]>([]);
+  const [loadingHalaqat, setLoadingHalaqat] = useState(false);
+  const [halaqaModalOpen, setHalaqaModalOpen] = useState(false);
+  const [editingHalaqaId, setEditingHalaqaId] = useState<string | null>(null);
+  const [halaqaFormData, setHalaqaFormData] = useState({
+    name: "",
+    description: "",
+    level: "متوسط",
+    scheduleDays: "السبت, الإثنين, الأربعاء",
+    startTime: "16:00",
+    endTime: "17:30",
+    capacity: 25,
+    status: "ACTIVE",
+  });
+  const [savingHalaqa, setSavingHalaqa] = useState(false);
+  const [deleteHalaqaItem, setDeleteHalaqaItem] = useState<any | null>(null);
+  const [deletingHalaqa, setDeletingHalaqa] = useState(false);
+  const [startingLiveId, setStartingLiveId] = useState<string | null>(null);
+
   // Audit Logs (recent 5)
   const [recentAudit, setRecentAudit] = useState<any[]>([]);
 
@@ -143,8 +168,141 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const fetchHalaqatData = async () => {
+    try {
+      setLoadingHalaqat(true);
+      const res = await fetch("/api/teacher/halaqat");
+      if (res.ok) {
+        const d = await res.json();
+        setHalaqat(d.halaqat || []);
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert("تعذر جلب بيانات الحلقات", "error");
+    } finally {
+      setLoadingHalaqat(false);
+    }
+  };
+
+  const handleOpenCreateHalaqa = () => {
+    setEditingHalaqaId(null);
+    setHalaqaFormData({
+      name: "",
+      description: "",
+      level: "متوسط",
+      scheduleDays: "السبت, الإثنين, الأربعاء",
+      startTime: "16:00",
+      endTime: "17:30",
+      capacity: 25,
+      status: "ACTIVE",
+    });
+    setHalaqaModalOpen(true);
+  };
+
+  const handleOpenEditHalaqa = (h: any) => {
+    setEditingHalaqaId(h.id);
+    setHalaqaFormData({
+      name: h.name || "",
+      description: h.description || "",
+      level: h.level || "متوسط",
+      scheduleDays: h.scheduleDays || "السبت, الإثنين, الأربعاء",
+      startTime: h.startTime || "16:00",
+      endTime: h.endTime || "17:30",
+      capacity: h.capacity || 25,
+      status: h.status || "ACTIVE",
+    });
+    setHalaqaModalOpen(true);
+  };
+
+  const handleSaveHalaqa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingHalaqa(true);
+    try {
+      const isEdit = Boolean(editingHalaqaId);
+      const res = await fetch("/api/teacher/halaqat", {
+        method: isEdit ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(isEdit && { id: editingHalaqaId }),
+          ...halaqaFormData,
+        }),
+      });
+
+      if (res.ok) {
+        showAlert(isEdit ? "تم تحديث بيانات الحلقة بنجاح" : "تم إنشاء الحلقة بنجاح", "success");
+        setHalaqaModalOpen(false);
+        fetchHalaqatData();
+        fetchUsersData();
+      } else {
+        const d = await res.json();
+        showAlert(d.error || "فشل حفظ بيانات الحلقة", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert("حدث خطأ أثناء الاتصال بالخادم", "error");
+    } finally {
+      setSavingHalaqa(false);
+    }
+  };
+
+  const handleDeleteHalaqa = async () => {
+    if (!deleteHalaqaItem) return;
+    setDeletingHalaqa(true);
+    try {
+      const res = await fetch(`/api/teacher/halaqat?id=${encodeURIComponent(deleteHalaqaItem.id)}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        showAlert(`تم حذف حلقة "${deleteHalaqaItem.name}" بنجاح`, "success");
+        setDeleteHalaqaItem(null);
+        fetchHalaqatData();
+        fetchUsersData();
+      } else {
+        const d = await res.json();
+        showAlert(d.error || "فشل حذف الحلقة", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert("حدث خطأ أثناء حذف الحلقة", "error");
+    } finally {
+      setDeletingHalaqa(false);
+    }
+  };
+
+  const handleStartLiveAsAdmin = async (halaqaId: string) => {
+    setStartingLiveId(halaqaId);
+    try {
+      const res = await fetch("/api/live/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ halaqaId }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        window.location.href = `/classroom/${data.session.id}?role=teacher`;
+      } else {
+        showAlert("فشل بدء الجلسة المباشرة", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert("حدث خطأ أثناء إنشاء الجلسة", "error");
+    } finally {
+      setStartingLiveId(null);
+    }
+  };
+
   useEffect(() => {
     fetchUsersData();
+    fetchHalaqatData();
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab === "HALAQAT" || tab === "USERS" || tab === "POLICIES" || tab === "AUDIT") {
+        setActiveTab(tab as any);
+      }
+    }
   }, []);
 
   // Quick Action 1: Toggle Active
@@ -405,6 +563,22 @@ export default function AdminDashboardPage() {
 
             {/* Header Action Buttons */}
             <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <Link
+                href="/teacher/dashboard"
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-islamic-800 hover:bg-islamic-700 text-white text-xs font-bold shadow-lg shadow-islamic-950/40 transition active:scale-95 border border-gold-accent/30"
+              >
+                <Video className="w-4 h-4 text-amber-300" />
+                <span>لوحة الحلقات والتعليم</span>
+              </Link>
+
+              <Link
+                href="/teacher/mushaf"
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition active:scale-95"
+              >
+                <BookOpen className="w-4 h-4 text-emerald-400" />
+                <span>المصحف والتسميع</span>
+              </Link>
+
               <button
                 onClick={() => setCreateModalOpen(true)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white text-xs font-bold shadow-lg shadow-emerald-950/40 transition active:scale-95"
@@ -414,7 +588,10 @@ export default function AdminDashboardPage() {
               </button>
 
               <button
-                onClick={fetchUsersData}
+                onClick={() => {
+                  fetchUsersData();
+                  fetchHalaqatData();
+                }}
                 disabled={refreshing}
                 className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition active:scale-95 disabled:opacity-50"
                 title="تحديث البيانات"
@@ -510,13 +687,13 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
           <button
             onClick={() => setActiveTab("USERS")}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
               activeTab === "USERS"
                 ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/20"
-                : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
             }`}
           >
             <Users className="w-4 h-4" />
@@ -524,11 +701,23 @@ export default function AdminDashboardPage() {
           </button>
 
           <button
+            onClick={() => setActiveTab("HALAQAT")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+              activeTab === "HALAQAT"
+                ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/20"
+                : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+            }`}
+          >
+            <CalendarDays className="w-4 h-4" />
+            <span>إشراف وإدارة الحلقات والتعليم ({halaqat.length})</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab("POLICIES")}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
               activeTab === "POLICIES"
                 ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/20"
-                : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
             }`}
           >
             <ShieldCheck className="w-4 h-4" />
@@ -540,7 +729,7 @@ export default function AdminDashboardPage() {
             className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
               activeTab === "AUDIT"
                 ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/20"
-                : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
             }`}
           >
             <Activity className="w-4 h-4" />
@@ -765,6 +954,174 @@ export default function AdminDashboardPage() {
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* TAB: HALAQAT & EDUCATION SUPERVISION */}
+        {activeTab === "HALAQAT" && (
+          <div className="space-y-6">
+            {/* Top Info & Quick Actions Banner */}
+            <div className="bg-gradient-to-r from-emerald-900 via-islamic-900 to-slate-900 text-white p-6 rounded-3xl shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-emerald-500/20">
+              <div>
+                <span className="text-amber-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mb-1">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  الإشراف المركزي والتحكم بالحلقات والمعلمين
+                </span>
+                <h2 className="text-xl sm:text-2xl font-black text-white">
+                  إدارة الحلقات والتعليم المباشر
+                </h2>
+                <p className="text-slate-300 text-xs mt-1 max-w-xl">
+                  صلاحيات كاملة للمدير: إنشاء الحلقات، تعيين المعلمين، تعديل المواعيد، حذف الحلقات، وبدء الجلسات المباشرة كمشرف عام.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  onClick={handleOpenCreateHalaqa}
+                  className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs shadow-lg transition active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>إضافة حلقة جديدة</span>
+                </button>
+
+                <Link
+                  href="/teacher/mushaf"
+                  className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-3.5 py-2.5 rounded-xl border border-white/20 text-xs transition"
+                >
+                  <BookOpen className="w-4 h-4 text-emerald-400" />
+                  <span>المصحف والتسميع</span>
+                </Link>
+
+                <Link
+                  href="/teacher/students"
+                  className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-3.5 py-2.5 rounded-xl border border-white/20 text-xs transition"
+                >
+                  <Users className="w-4 h-4 text-amber-300" />
+                  <span>إدارة الطلاب والطلبات</span>
+                </Link>
+
+                <Link
+                  href="/teacher/evaluations"
+                  className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-bold px-3.5 py-2.5 rounded-xl border border-white/20 text-xs transition"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-purple-300" />
+                  <span>سجل الحفظ والتقييم</span>
+                </Link>
+              </div>
+            </div>
+
+            {/* Halaqat Grid */}
+            {loadingHalaqat ? (
+              <div className="py-16 text-center text-xs text-slate-400 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
+                جارٍ تحميل بيانات الحلقات والمعلمين...
+              </div>
+            ) : halaqat.length === 0 ? (
+              <div className="py-16 text-center text-xs text-slate-400 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
+                لا توجد حلقات مسجلة حالياً. اضغط على "إضافة حلقة جديدة" لإنشاء حلقة.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {halaqat.map((h) => {
+                  const isLive = Boolean(h.isLiveNow || h.currentLiveSessionId);
+
+                  return (
+                    <div
+                      key={h.id}
+                      className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm flex flex-col justify-between space-y-4 hover:border-emerald-500/40 transition group"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-1 flex-wrap">
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                            {h.level}
+                          </span>
+
+                          <div className="flex items-center gap-1.5">
+                            {isLive && (
+                              <span className="text-[10px] font-bold text-red-500 bg-red-50 dark:bg-red-950/40 px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                جلسة مباشرة
+                              </span>
+                            )}
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                h.status === "ACTIVE"
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                              }`}
+                            >
+                              {h.status === "ACTIVE" ? "نشطة" : h.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h3 className="font-black text-base text-slate-900 dark:text-slate-100">
+                            {h.name}
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                            {h.description || "حلقة تعليمية مخصصة للقرآن والعلوم الشرعية."}
+                          </p>
+                        </div>
+
+                        <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 pt-2 border-t border-slate-100 dark:border-slate-800">
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">المعلم المقرئ:</span>
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              {h.teacher?.user?.name || "الشيخ المنشاوي"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">الأيام:</span>
+                            <span className="font-semibold">{h.scheduleDays}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">الوقت:</span>
+                            <span className="font-mono font-semibold">
+                              {h.startTime} - {h.endTime}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">الطلاب المسجلين:</span>
+                            <span className="font-bold text-emerald-600">
+                              {h.enrollments?.length || 0} / {h.capacity || 25} طالب
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Admin Full Control Actions */}
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                        <button
+                          onClick={() => handleStartLiveAsAdmin(h.id)}
+                          disabled={startingLiveId === h.id}
+                          className="flex-1 flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black text-xs py-2 rounded-xl shadow-xs transition active:scale-95 disabled:opacity-50"
+                          title="بدء أو دخول البث المباشر كمدير عام"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          <span>{startingLiveId === h.id ? "جارٍ الدخول..." : "دخول كمدير مشرف 🎥"}</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleOpenEditHalaqa(h)}
+                          className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition"
+                          title="تعديل بيانات الحلقة"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => setDeleteHalaqaItem(h)}
+                          className="p-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 text-red-600 transition"
+                          title="حذف الحلقة نهائياً"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1605,6 +1962,210 @@ export default function AdminDashboardPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* MODAL 4: ADMIN HALAQA CREATE / EDIT MODAL                     */}
+        {/* ============================================================ */}
+        {halaqaModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+              <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                    <CalendarDays className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black text-slate-900 dark:text-slate-100">
+                      {editingHalaqaId ? "تعديل بيانات الحلقة القرآنية" : "إضافة حلقة قرآنية جديدة"}
+                    </h2>
+                    <span className="text-xs text-slate-400">
+                      تحكم كامل للمدير العام في الحلقات والمواعيد
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setHalaqaModalOpen(false)}
+                  className="p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveHalaqa} className="p-6 space-y-4 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    اسم الحلقة: <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: حلقة الفجر المباركة"
+                    value={halaqaFormData.name}
+                    onChange={(e) => setHalaqaFormData({ ...halaqaFormData, name: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    الوصف والأهداف:
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="وصف مختصر للحلقة..."
+                    value={halaqaFormData.description}
+                    onChange={(e) => setHalaqaFormData({ ...halaqaFormData, description: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      المستوى:
+                    </label>
+                    <select
+                      value={halaqaFormData.level}
+                      onChange={(e) => setHalaqaFormData({ ...halaqaFormData, level: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="مبتدئ">مبتدئ</option>
+                      <option value="متوسط">متوسط</option>
+                      <option value="متقدم (حفظ وتثبيت)">متقدم (حفظ وتثبيت)</option>
+                      <option value="إجازة وقراءات">إجازة وقراءات</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      الطاقة الاستيعابية:
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={halaqaFormData.capacity}
+                      onChange={(e) => setHalaqaFormData({ ...halaqaFormData, capacity: Number(e.target.value) })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    أيام الانعقاد:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="السبت, الإثنين, الأربعاء"
+                    value={halaqaFormData.scheduleDays}
+                    onChange={(e) => setHalaqaFormData({ ...halaqaFormData, scheduleDays: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      وقت البدء:
+                    </label>
+                    <input
+                      type="time"
+                      required
+                      value={halaqaFormData.startTime}
+                      onChange={(e) => setHalaqaFormData({ ...halaqaFormData, startTime: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      وقت الانتهاء:
+                    </label>
+                    <input
+                      type="time"
+                      required
+                      value={halaqaFormData.endTime}
+                      onChange={(e) => setHalaqaFormData({ ...halaqaFormData, endTime: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    حالة الحلقة:
+                  </label>
+                  <select
+                    value={halaqaFormData.status}
+                    onChange={(e) => setHalaqaFormData({ ...halaqaFormData, status: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="ACTIVE">نشطة ومجدولة (ACTIVE)</option>
+                    <option value="UPCOMING">قريبة الانعقاد (UPCOMING)</option>
+                    <option value="PAUSED">مؤجلة مؤقتاً (PAUSED)</option>
+                    <option value="COMPLETED">مكتملة (COMPLETED)</option>
+                  </select>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setHalaqaModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingHalaqa}
+                    className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shadow-md transition disabled:opacity-50"
+                  >
+                    {savingHalaqa ? "جاري الحفظ..." : editingHalaqaId ? "حفظ التعديلات" : "إنشاء الحلقة"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* MODAL 5: DELETE HALAQA CONFIRMATION                          */}
+        {/* ============================================================ */}
+        {deleteHalaqaItem && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-900 border border-red-500/30 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden p-6 text-center space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 dark:bg-red-950/60 text-red-600 mx-auto flex items-center justify-center">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-black text-slate-900 dark:text-slate-100">
+                تأكيد حذف حلقة: "{deleteHalaqaItem.name}"
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                هل أنت متأكد من حذف هذه الحلقة نهائياً من النظام؟ سيتم إلغاء المواعيد المرتبطة بها وسجل الحضور. هذا الإجراء لا يمكن التراجع عنه.
+              </p>
+              <div className="flex items-center justify-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteHalaqaItem(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteHalaqa}
+                  disabled={deletingHalaqa}
+                  className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-md transition disabled:opacity-50"
+                >
+                  {deletingHalaqa ? "جاري الحذف..." : "نعم، حذف الحلقة نهائياً"}
+                </button>
+              </div>
             </div>
           </div>
         )}
