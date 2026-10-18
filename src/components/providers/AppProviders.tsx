@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { CurrentUser, RealtimeEvent } from "@/types";
+import { SheikhDecisionOverlay } from "@/components/notifications/SheikhDecisionOverlay";
 
 interface AuthContextType {
   user: CurrentUser | null;
@@ -186,6 +187,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <RealtimeContext.Provider value={{ lastEvent, connected, subscribe }}>
         <div className={darkMode ? "dark" : ""}>
           {children}
+          <SheikhDecisionOverlay />
         </div>
       </RealtimeContext.Provider>
     </AuthContext.Provider>

@@ -100,6 +100,12 @@ export default function StudentDashboard() {
       } else if (lastEvent.type === "HALAQA_LIVE_ENDED") {
         setActiveSession(null);
         setSessionAuthStatus("NO_ACTIVE_SESSION");
+      } else if (lastEvent.type === "SESSION_JOIN_REJECTED") {
+        setSessionAuthStatus("NEEDS_REQUEST");
+        fetchData();
+      } else if (lastEvent.type === "SESSION_JOIN_RESCHEDULED") {
+        setSessionAuthStatus("NEEDS_REQUEST");
+        fetchData();
       } else if (
         lastEvent.type === "SCHEDULE_UPDATED" ||
         lastEvent.type === "SESSION_JOIN_APPROVED" ||

@@ -257,6 +257,115 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, attendance: updatedAttendance });
     }
 
+    // Action 2.1: Teacher rejects session join request
+    if (action === "REJECT_JOIN_SESSION") {
+      let resolvedStudentId = studentId;
+      if (!resolvedStudentId && body.requestId) {
+        const reqItem = await prisma.joinRequest.findUnique({ where: { id: body.requestId } });
+        resolvedStudentId = reqItem?.studentId;
+      }
+
+      if (sessionId && resolvedStudentId) {
+        await prisma.sessionAttendance.updateMany({
+          where: { sessionId, studentId: resolvedStudentId },
+          data: {
+            isVerifiedByTeacher: false,
+            requestedCheckIn: false,
+            status: "ABSENT",
+          },
+        }).catch(() => {});
+      }
+
+      const studentProfile = resolvedStudentId
+        ? await prisma.studentProfile.findUnique({
+            where: { id: resolvedStudentId },
+            include: { user: true },
+          })
+        : null;
+
+      if (studentProfile?.user?.id) {
+        await prisma.notification.create({
+          data: {
+            userId: studentProfile.user.id,
+            title: "اعتذار عن قبول الدخول للحلقة الآن",
+            body: body.reason || "اعتذر فضيلة الشيخ عن قبول الانضمام للجلسة الحالية، يمكنك المحاولة في جلسة قادمة.",
+            type: "JOIN_REQUEST_REJECTED",
+            link: "/student/dashboard",
+          },
+        }).catch(() => {});
+      }
+
+      realtimeHub.broadcast("global", {
+        type: "SESSION_JOIN_REJECTED",
+        payload: {
+          sessionId,
+          studentId: resolvedStudentId,
+          studentUserId: studentProfile?.user?.id,
+          message: "تم الاعتذار عن قبول طلب الانضمام",
+        },
+      });
+
+      return NextResponse.json({ success: true, message: "تم رفض طلب الانضمام للجلسة" });
+    }
+
+    // Action 2.2: Teacher reschedules / comments with alternative time for session join
+    if (action === "RESCHEDULE_JOIN_SESSION") {
+      let resolvedStudentId = studentId;
+      if (!resolvedStudentId && body.requestId) {
+        const reqItem = await prisma.joinRequest.findUnique({ where: { id: body.requestId } });
+        resolvedStudentId = reqItem?.studentId;
+      }
+
+      const scheduledTime = body.scheduledTime || "الجلسة القادمة";
+      const notes = body.notes || "";
+
+      if (sessionId && resolvedStudentId) {
+        await prisma.sessionAttendance.updateMany({
+          where: { sessionId, studentId: resolvedStudentId },
+          data: {
+            isVerifiedByTeacher: false,
+            requestedCheckIn: false,
+            notes: `موعد بديل: ${scheduledTime} - ${notes}`,
+          },
+        }).catch(() => {});
+      }
+
+      const studentProfile = resolvedStudentId
+        ? await prisma.studentProfile.findUnique({
+            where: { id: resolvedStudentId },
+            include: { user: true },
+          })
+        : null;
+
+      const bodyText = `اقترح فضيلة الشيخ حضورك في موعد بديل: ${scheduledTime}.${notes ? ` ملاحظة: ${notes}` : ""}`;
+
+      if (studentProfile?.user?.id) {
+        await prisma.notification.create({
+          data: {
+            userId: studentProfile.user.id,
+            title: "تحديد موعد بديل من فضيلة الشيخ 📅",
+            body: bodyText,
+            type: "SCHEDULE_UPDATED",
+            link: "/student/dashboard",
+          },
+        }).catch(() => {});
+      }
+
+      realtimeHub.broadcast("global", {
+        type: "SESSION_JOIN_RESCHEDULED",
+        payload: {
+          sessionId,
+          studentId: resolvedStudentId,
+          studentUserId: studentProfile?.user?.id,
+          scheduledTime,
+          notes,
+          message: bodyText,
+        },
+      });
+
+      return NextResponse.json({ success: true, message: "تم إرسال الموعد البديل للطالب بنجاح" });
+    }
+
     // Action 3: Teacher manual verification or update
     if (user.role === "STUDENT") {
       return NextResponse.json({ error: "غير مصرح بتعديل الحضور" }, { status: 403 });

@@ -16,15 +16,12 @@ import {
   Radio,
   X,
   Volume2,
-  UserCheck,
   CheckCircle2,
-  Bell,
   Clock,
-  Sparkles,
-  ShieldCheck,
+  UserCheck,
   UserPlus,
 } from "lucide-react";
-import { playHalaqaStartSound, playTeacherJoinAlertSound, playStudentApprovedSound } from "@/lib/sound";
+import { playHalaqaStartSound, playStudentApprovedSound } from "@/lib/sound";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -39,32 +36,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     teacherName: string;
     title?: string;
     approvalStatus?: "APPROVED" | "PENDING" | "NOT_REQUESTED";
-  } | null>(null);
-
-  // Sheikh Real-time Floating Join Request Notification
-  const [teacherJoinToast, setTeacherJoinToast] = useState<{
-    visible: boolean;
-    requestId?: string;
-    sessionId?: string;
-    halaqaId?: string;
-    halaqaName?: string;
-    studentId?: string;
-    studentName?: string;
-    studentAvatar?: string;
-    time?: string;
-    isAccepting?: boolean;
-    accepted?: boolean;
-  } | null>(null);
-
-  // Sheikh Real-time Floating New Student Registration Toast
-  const [newStudentToast, setNewStudentToast] = useState<{
-    visible: boolean;
-    studentUserId?: string;
-    studentName?: string;
-    phone?: string;
-    time?: string;
-    isApproving?: boolean;
-    approved?: boolean;
   } | null>(null);
 
   // Student Real-time Floating Approval Toast
@@ -111,28 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       }
     }
 
-    // 2. Student clicked "طلب انضمام" -> Alert Teacher immediately!
-    if (lastEvent.type === "SESSION_JOIN_REQUESTED" || lastEvent.type === "JOIN_REQUEST_SUBMITTED") {
-      const p = lastEvent.payload;
-      if (isTeacher) {
-        playTeacherJoinAlertSound();
-        setTeacherJoinToast({
-          visible: true,
-          requestId: p.requestId,
-          sessionId: p.sessionId,
-          halaqaId: p.halaqaId,
-          halaqaName: p.halaqaName || "الحلقة القرآنية",
-          studentId: p.studentId,
-          studentName: p.studentName || "طالب العلم",
-          studentAvatar: p.studentAvatar,
-          time: p.time || new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
-          isAccepting: false,
-          accepted: false,
-        });
-      }
-    }
-
-    // 3. Sheikh clicked "قبول ودخول" -> Alert Student screen immediately!
+    // 2. Sheikh clicked "قبول ودخول" -> Alert Student screen immediately!
     if (lastEvent.type === "SESSION_JOIN_APPROVED" || lastEvent.type === "JOIN_REQUEST_APPROVED") {
       const p = lastEvent.payload;
       if (isStudent) {
@@ -147,81 +97,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       }
     }
 
-    // 4. New Student Registered -> Alert Teacher immediately!
-    if (lastEvent.type === "STUDENT_REGISTRATION_SUBMITTED") {
-      const p = lastEvent.payload;
-      if (isTeacher) {
-        playTeacherJoinAlertSound();
-        setNewStudentToast({
-          visible: true,
-          studentUserId: p.studentId || p.studentUserId,
-          studentName: p.studentName || "طالب جديد",
-          phone: p.phone,
-          time: p.time || new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
-          isApproving: false,
-          approved: false,
-        });
-      }
-    }
-    // 5. Session ended -> Dismiss student live modal immediately
+    // 3. Session ended -> Dismiss student live modal immediately
     if (lastEvent.type === "HALAQA_LIVE_ENDED") {
       setLiveModal(null);
     }
   }, [lastEvent, isStudent, isTeacher]);
-
-  // Sheikh 1-Click Accept Session Join
-  const handleTeacher1ClickAccept = async () => {
-    if (!teacherJoinToast) return;
-    setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: true } : null));
-    try {
-      const res = await fetch("/api/teacher/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "ACCEPT_JOIN_SESSION",
-          sessionId: teacherJoinToast.sessionId,
-          halaqaId: teacherJoinToast.halaqaId,
-          studentId: teacherJoinToast.studentId,
-          requestId: teacherJoinToast.requestId,
-        }),
-      });
-
-      if (res.ok) {
-        setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false, accepted: true } : null));
-        setTimeout(() => setTeacherJoinToast(null), 3000);
-      } else {
-        alert("فشل تأكيد القبول");
-        setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false } : null));
-      }
-    } catch {
-      setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false } : null));
-    }
-  };
-
-  // Sheikh 1-Click Approve New Student Registration
-  const handleTeacher1ClickApproveStudent = async () => {
-    if (!newStudentToast?.studentUserId) return;
-    setNewStudentToast((prev) => (prev ? { ...prev, isApproving: true } : null));
-    try {
-      const res = await fetch("/api/teacher/students", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "APPROVE_STUDENT_REGISTRATION",
-          studentUserId: newStudentToast.studentUserId,
-        }),
-      });
-      if (res.ok) {
-        setNewStudentToast((prev) => (prev ? { ...prev, isApproving: false, approved: true } : null));
-        setTimeout(() => setNewStudentToast(null), 3500);
-      } else {
-        alert("فشل تفعيل الحساب");
-        setNewStudentToast((prev) => (prev ? { ...prev, isApproving: false } : null));
-      }
-    } catch {
-      setNewStudentToast((prev) => (prev ? { ...prev, isApproving: false } : null));
-    }
-  };
 
   // Student 1-Click Request Join Handler
   const handleStudent1ClickJoin = async (sessionId?: string) => {
@@ -301,8 +181,18 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
 
     checkActive();
-    const interval = setInterval(checkActive, 4000);
-    return () => clearInterval(interval);
+    // Relaxed fallback check every 30 seconds to keep performance light and fast
+    const interval = setInterval(checkActive, 30000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkActive();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [isStudent, dismissedSessionIds]);
 
   return (
@@ -311,117 +201,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         pathname.includes("/mushaf") ? "h-screen overflow-hidden" : "min-h-screen"
       }`}
     >
-      {/* 1. Sheikh Real-Time Floating Join Request Alert with 1-Click Accept */}
-      {teacherJoinToast?.visible && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-lg w-[92%] sm:w-full animate-in slide-in-from-top-4 duration-300">
-          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950 text-white rounded-3xl p-4 sm:p-5 shadow-2xl border-2 border-emerald-500/70 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <img
-                  src={
-                    teacherJoinToast.studentAvatar ||
-                    "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150"
-                  }
-                  alt={teacherJoinToast.studentName}
-                  className="w-11 h-11 rounded-2xl object-cover ring-2 ring-emerald-400"
-                />
-                <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-950 flex items-center justify-center">
-                  <Bell className="w-2.5 h-2.5 text-white" />
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] font-black text-amber-300 uppercase tracking-wider block">
-                  🔔 طلب انضمام للحلقة الآن
-                </span>
-                <h4 className="font-black text-sm text-white">
-                  الطالب: {teacherJoinToast.studentName}
-                </h4>
-                <p className="text-[11px] text-slate-300">
-                  يرغب في الانضمام إلى: {teacherJoinToast.halaqaName}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {teacherJoinToast.accepted ? (
-                <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>تم القبول والدخول ✅</span>
-                </div>
-              ) : (
-                <>
-                  <button
-                    onClick={handleTeacher1ClickAccept}
-                    disabled={teacherJoinToast.isAccepting}
-                    className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
-                  >
-                    <UserCheck className="w-4 h-4" />
-                    <span>{teacherJoinToast.isAccepting ? "جارٍ القبول..." : "قبول ودخول ✅"}</span>
-                  </button>
-                  <button
-                    onClick={() => setTeacherJoinToast(null)}
-                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition"
-                    title="تجاهل"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Sheikh Real-Time Floating New Student Registration Toast with 1-Click Approve */}
-      {newStudentToast?.visible && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-lg w-[92%] sm:w-full animate-in slide-in-from-top-4 duration-300">
-          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950 text-white rounded-3xl p-4 sm:p-5 shadow-2xl border-2 border-amber-400/80 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center shrink-0">
-                <UserPlus className="w-6 h-6 text-amber-300" />
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] font-black text-amber-300 uppercase tracking-wider block">
-                  ✨ طلب تسجيل طالب جديد على المنصة
-                </span>
-                <h4 className="font-black text-sm text-white">
-                  الطالب: {newStudentToast.studentName}
-                </h4>
-                <p className="text-[11px] text-slate-300 font-mono">
-                  {newStudentToast.phone ? `الجوال: ${newStudentToast.phone}` : "بانتظار اعتماد فضيلتكم وتفعيل الحساب"}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {newStudentToast.approved ? (
-                <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>تم اعتماد الحساب بنجاح ✅</span>
-                </div>
-              ) : (
-                <>
-                  <button
-                    onClick={handleTeacher1ClickApproveStudent}
-                    disabled={newStudentToast.isApproving}
-                    className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-amber-300 hover:from-amber-300 hover:to-amber-200 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{newStudentToast.isApproving ? "جارٍ التفعيل..." : "اعتماد الحساب ✅"}</span>
-                  </button>
-                  <button
-                    onClick={() => setNewStudentToast(null)}
-                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition"
-                    title="تجاهل"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 3. Student Real-Time Floating Approval Toast */}
       {studentApprovalToast?.visible && (

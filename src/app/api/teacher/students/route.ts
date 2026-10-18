@@ -324,12 +324,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, message: "تم استرجاع الطالب وإعادة تفعيله" });
     }
 
-    // 7. Approve New Student Registration (Activate Account)
+    // 7. Approve New Student Registration (Activate Account + Choose Track / Halaqa + optional appointment)
     if (action === "APPROVE_STUDENT_REGISTRATION") {
       const studentUserId = body.studentUserId;
       if (!studentUserId) {
         return NextResponse.json({ error: "معرف الطالب مطلوب" }, { status: 400 });
       }
+
+      const track = body.track || "GROUP"; // "INDIVIDUAL" (فردي) | "GROUP" (مجموعة) | "FOUNDATION" (تأسيس)
+      const targetHalaqaId = body.targetHalaqaId;
+      const scheduledTime = body.scheduledTime;
+      const comment = body.comment;
+
+      const trackNameAr =
+        track === "INDIVIDUAL"
+          ? "المسار الفردي (تسميع خاص)"
+          : track === "FOUNDATION"
+          ? "مسار التأسيس والقاعدة النورانية"
+          : "المسار الجماعي (حلقة عامة)";
 
       const updatedUser = await prisma.user.update({
         where: { id: studentUserId },
@@ -337,13 +349,48 @@ export async function POST(req: Request) {
         include: { studentProfile: true },
       });
 
-      // Send DB notification to student
+      // If a specific Halaqa was chosen or default active Halaqa exists, enroll the student
+      let assignedHalaqaName = "";
+      if (updatedUser.studentProfile) {
+        let halaqaToEnrollId = targetHalaqaId;
+        if (!halaqaToEnrollId) {
+          const defaultHalaqa = await prisma.halaqa.findFirst({
+            where: { status: "ACTIVE" },
+          });
+          halaqaToEnrollId = defaultHalaqa?.id;
+        }
+
+        if (halaqaToEnrollId) {
+          const h = await prisma.halaqa.findUnique({ where: { id: halaqaToEnrollId } });
+          assignedHalaqaName = h?.name || "";
+          await prisma.halaqaEnrollment.upsert({
+            where: {
+              halaqaId_studentId: {
+                halaqaId: halaqaToEnrollId,
+                studentId: updatedUser.studentProfile.id,
+              },
+            },
+            update: { status: "ACTIVE", deletedAt: null },
+            create: {
+              halaqaId: halaqaToEnrollId,
+              studentId: updatedUser.studentProfile.id,
+              status: "ACTIVE",
+            },
+          });
+        }
+      }
+
+      // Detailed welcome notification to student
+      const notificationBody = `مرحباً بك! اعتمد فضيلة الشيخ انضمامك إلى: ${trackNameAr}${
+        assignedHalaqaName ? ` (${assignedHalaqaName})` : ""
+      }.${scheduledTime ? ` الموعد المحدد: ${scheduledTime}.` : ""}${comment ? ` ملاحظة: ${comment}` : ""}`;
+
       try {
         await prisma.notification.create({
           data: {
             userId: studentUserId,
             title: "تم اعتماد وتفعيل حسابك بنجاح ✅",
-            body: "مرحباً بك! وافق فضيلة الشيخ أحمد علي على اعتماد حسابك في الأكاديمية المباركة. يمكنك الآن الدخول ومتابعة الحلقات.",
+            body: notificationBody,
             type: "ACCOUNT_APPROVED",
             link: "/student/dashboard",
           },
@@ -358,25 +405,97 @@ export async function POST(req: Request) {
         payload: {
           studentUserId,
           studentName: updatedUser.name,
-          message: "تم اعتماد وتفعيل حساب الطالب بنجاح",
+          track,
+          trackNameAr,
+          assignedHalaqaName,
+          scheduledTime,
+          message: `تم اعتماد وتفعيل حساب الطالب بنجاح في ${trackNameAr}`,
         },
       });
 
-      return NextResponse.json({ success: true, message: "تم اعتماد وتفعيل حساب الطالب بنجاح" });
+      return NextResponse.json({
+        success: true,
+        message: `تم اعتماد وتفعيل حساب الطالب بنجاح في ${trackNameAr}`,
+      });
     }
 
-    // 8. Reject New Student Registration
-    if (action === "REJECT_STUDENT_REGISTRATION") {
+    // 8. Reschedule / Comment on New Student Registration
+    if (action === "RESCHEDULE_STUDENT_REGISTRATION") {
       const studentUserId = body.studentUserId;
+      const scheduledTime = body.scheduledTime || "موعد لاحق يتم تحديده";
+      const comment = body.comment || "";
+
       if (!studentUserId) {
         return NextResponse.json({ error: "معرف الطالب مطلوب" }, { status: 400 });
       }
 
-      await prisma.user.delete({
+      const updatedUser = await prisma.user.update({
         where: { id: studentUserId },
+        data: { isActive: true }, // Activate so student can log in and view their appointment
+        include: { studentProfile: true },
       });
 
-      return NextResponse.json({ success: true, message: "تم رفض وحذف طلب التسجيل" });
+      const bodyMsg = `حدد فضيلة الشيخ موعداً لك: ${scheduledTime}.${comment ? ` ملاحظة الشيخ: ${comment}` : ""} يمكنك تسجيل الدخول ومتابعة جدولك.`;
+
+      await prisma.notification.create({
+        data: {
+          userId: studentUserId,
+          title: "موعد جديد محدد من فضيلة الشيخ 📅",
+          body: bodyMsg,
+          type: "SCHEDULE_UPDATED",
+          link: "/student/dashboard",
+        },
+      }).catch(() => {});
+
+      realtimeHub.broadcast("global", {
+        type: "STUDENT_REGISTRATION_RESCHEDULED",
+        payload: {
+          studentUserId,
+          studentName: updatedUser.name,
+          scheduledTime,
+          comment,
+          message: `تم إرسال الموعد المقترح (${scheduledTime}) إلى الطالب بنجاح`,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `تم إرسال الموعد المقترح (${scheduledTime}) إلى الطالب بنجاح`,
+      });
+    }
+
+    // 9. Reject New Student Registration
+    if (action === "REJECT_STUDENT_REGISTRATION") {
+      const studentUserId = body.studentUserId;
+      const reason = body.reason || "نعتذر لاكتمال النصاب حالياً";
+      if (!studentUserId) {
+        return NextResponse.json({ error: "معرف الطالب مطلوب" }, { status: 400 });
+      }
+
+      await prisma.notification.create({
+        data: {
+          userId: studentUserId,
+          title: "اعتذار عن قبول التسجيل",
+          body: `نعتذر عن عدم قبول طلب التسجيل في الوقت الحالي. ${reason}`,
+          type: "REGISTRATION_REJECTED",
+        },
+      }).catch(() => {});
+
+      await prisma.user.update({
+        where: { id: studentUserId },
+        data: { isActive: false },
+      }).catch(() => {});
+
+      realtimeHub.broadcast("global", {
+        type: "STUDENT_REGISTRATION_REJECTED",
+        payload: {
+          studentUserId,
+          reason,
+          message: "تم الاعتذار عن قبول طلب التسجيل",
+        },
+      });
+
+      return NextResponse.json({ success: true, message: "تم الاعتذار عن قبول طلب التسجيل" });
     }
 
     return NextResponse.json({ error: "إجراء غير معروف" }, { status: 400 });
