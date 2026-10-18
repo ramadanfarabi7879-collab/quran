@@ -131,15 +131,20 @@ export default function StudentDashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionId: sessionId || activeSession?.id,
-          halaqaId: halaqaId || activeSession?.halaqaId,
+          sessionId: sessionId || activeSession?.id || "auto",
+          halaqaId: halaqaId || activeSession?.halaqaId || halaqat[0]?.id,
         }),
       });
       if (res.ok) {
+        alert("تم رفع طلب الانضمام إلى فضيلة الشيخ بنجاح، وطلبك قيد المراجعة والاعتماد الآن.");
         fetchData();
+      } else {
+        const d = await res.json();
+        alert(d.error || "فشل إرسال طلب الانضمام");
       }
     } catch (e) {
       console.error(e);
+      alert("حدث خطأ أثناء إرسال طلب الانضمام");
     } finally {
       setRequestingSession(false);
     }
@@ -320,7 +325,7 @@ export default function StudentDashboard() {
             {/* Single Dynamic Action Button in Hero */}
             {hasApprovedHalaqa ? (
               <Link
-                href={`/classroom/${approvedHalaqat[0].currentLiveSessionId || approvedHalaqat[0].id}?role=student`}
+                href={`/classroom/${approvedHalaqat[0].currentLiveSessionId || activeSession?.id || "auto"}?role=student`}
                 className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black px-4 py-2.5 rounded-2xl text-xs shadow-lg shadow-amber-950/20 transition-transform hover:scale-105 active:scale-95"
                 title="متابعة الحلقة (طالب معتمد)"
               >
@@ -337,7 +342,7 @@ export default function StudentDashboard() {
               </div>
             ) : (
               <button
-                onClick={() => handleStudent1ClickJoin(undefined, halaqat[0]?.id)}
+                onClick={() => handleStudent1ClickJoin(activeSession?.id, halaqat[0]?.id)}
                 disabled={requestingSession}
                 className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-bold px-4 py-2.5 rounded-2xl text-xs shadow transition active:scale-95 disabled:opacity-50"
                 title="طلب الانضمام إلى الحلقة"

@@ -33,6 +33,49 @@ export default function TeacherDashboard() {
   const [startingSession, setStartingSession] = useState(false);
   const [selectedHalaqaId, setSelectedHalaqaId] = useState("");
   const [showSessionModal, setShowSessionModal] = useState(false);
+  const [showAddHalaqaModal, setShowAddHalaqaModal] = useState(false);
+  const [newHalaqaName, setNewHalaqaName] = useState("");
+  const [newHalaqaLevel, setNewHalaqaLevel] = useState("متوسط");
+  const [newHalaqaDays, setNewHalaqaDays] = useState("السبت, الإثنين, الأربعاء");
+  const [newHalaqaStartTime, setNewHalaqaStartTime] = useState("16:00");
+  const [newHalaqaEndTime, setNewHalaqaEndTime] = useState("17:30");
+  const [creatingHalaqa, setCreatingHalaqa] = useState(false);
+
+  const handleCreateNewHalaqa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newHalaqaName.trim()) {
+      alert("يرجى إدخال اسم ومسمى الحلقة");
+      return;
+    }
+    setCreatingHalaqa(true);
+    try {
+      const res = await fetch("/api/teacher/halaqat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newHalaqaName.trim(),
+          level: newHalaqaLevel,
+          scheduleDays: newHalaqaDays,
+          startTime: newHalaqaStartTime,
+          endTime: newHalaqaEndTime,
+        }),
+      });
+
+      if (res.ok) {
+        setShowAddHalaqaModal(false);
+        setNewHalaqaName("");
+        alert("تم إنشاء الحلقة القرآنية وإضافتها بنجاح!");
+        fetchData();
+      } else {
+        const d = await res.json();
+        alert(d.error || "فشل إنشاء الحلقة");
+      }
+    } catch {
+      alert("حدث خطأ أثناء حفظ بيانات الحلقة");
+    } finally {
+      setCreatingHalaqa(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -145,12 +188,22 @@ export default function TeacherDashboard() {
               </Link>
             )}
             <button
-              onClick={() => setShowSessionModal(true)}
-              className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 hover:to-gold-accent text-slate-950 font-black px-5 py-3 rounded-2xl shadow-lg transition-transform hover:scale-105 active:scale-95 text-sm"
+              onClick={handleStartSessionNow}
+              disabled={startingSession}
+              className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black px-5 py-3 rounded-2xl shadow-lg transition-transform hover:scale-105 active:scale-95 text-sm disabled:opacity-50 cursor-pointer"
             >
               <Video className="w-5 h-5" />
-              إنشاء جلسة الآن
+              <span>{startingSession ? "جارٍ بدء الجلسة..." : "إنشاء جلسة الآن"}</span>
             </button>
+
+            <button
+              onClick={() => setShowAddHalaqaModal(true)}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-3 rounded-2xl shadow-lg transition-transform hover:scale-105 active:scale-95 text-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>إضافة حلقة جديدة</span>
+            </button>
+
             <Link
               href="/teacher/mushaf"
               className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-3 rounded-2xl border border-white/20 text-sm transition"
@@ -189,6 +242,122 @@ export default function TeacherDashboard() {
               >
                 إدارة الحلقات الشاملة
               </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Create New Halaqa */}
+        {showAddHalaqaModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <CalendarDays className="w-5 h-5 text-emerald-600" />
+                    إضافة حلقة ومسمى قرآني جديد
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    قم بإدخال بيانات ومسمى الحلقة ومواعيد انعقادها الأسبوعية.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowAddHalaqaModal(false)}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-xl text-base font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateNewHalaqa} className="space-y-3.5 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    اسم ومسمى الحلقة: <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: حلقة الفجر والتحفيظ والتجويد، حلقة النور لتثبيت القرآن..."
+                    value={newHalaqaName}
+                    onChange={(e) => setNewHalaqaName(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      المستوى القرآني:
+                    </label>
+                    <select
+                      value={newHalaqaLevel}
+                      onChange={(e) => setNewHalaqaLevel(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold"
+                    >
+                      <option value="مبتدئ">مبتدئ (تلقين وتصحيح تلاوة)</option>
+                      <option value="متوسط">متوسط (حفظ وتجويد)</option>
+                      <option value="متقدم">متقدم (تثبيت ومراجعة خاتمين)</option>
+                      <option value="إجازات">إجازات وقراءات</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      أيام الانعقاد:
+                    </label>
+                    <input
+                      type="text"
+                      value={newHalaqaDays}
+                      onChange={(e) => setNewHalaqaDays(e.target.value)}
+                      placeholder="السبت, الإثنين, الأربعاء"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      وقت البداية:
+                    </label>
+                    <input
+                      type="time"
+                      value={newHalaqaStartTime}
+                      onChange={(e) => setNewHalaqaStartTime(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      وقت النهاية:
+                    </label>
+                    <input
+                      type="time"
+                      value={newHalaqaEndTime}
+                      onChange={(e) => setNewHalaqaEndTime(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddHalaqaModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingHalaqa}
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-5 py-2.5 rounded-xl text-xs shadow-lg transition active:scale-95 disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{creatingHalaqa ? "جارٍ الحفظ..." : "حفظ وإنشاء الحلقة"}</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
