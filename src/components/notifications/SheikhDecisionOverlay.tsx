@@ -56,7 +56,7 @@ export function SheikhDecisionOverlay() {
   const [submitting, setSubmitting] = useState(false);
   const [actionDoneMsg, setActionDoneMsg] = useState<string | null>(null);
 
-  // Load existing halaqat schedules for suggestions
+  // 1. Load existing halaqat schedules for suggestions
   useEffect(() => {
     if (!isTeacherOrAdmin) return;
     const fetchHalaqat = async () => {
@@ -74,7 +74,79 @@ export function SheikhDecisionOverlay() {
     fetchHalaqat();
   }, [isTeacherOrAdmin]);
 
-  // Realtime notification listeners
+  // 2. Load pending registrations & join requests on mount & periodically
+  useEffect(() => {
+    if (!isTeacherOrAdmin) return;
+
+    let isMounted = true;
+    const syncPendingRequests = async () => {
+      try {
+        const res = await fetch("/api/teacher/students");
+        if (!res.ok || !isMounted) return;
+        const data = await res.json();
+
+        const pendingItems: DecisionItem[] = [];
+
+        // A. Pending New Student Registrations (isActive: false)
+        if (data.pendingRegistrations && Array.isArray(data.pendingRegistrations)) {
+          data.pendingRegistrations.forEach((u: any) => {
+            pendingItems.push({
+              id: `reg-${u.id}`,
+              type: "REGISTRATION",
+              studentUserId: u.id,
+              studentName: u.name || "طالب جديد",
+              phone: u.phone || u.studentProfile?.guardianPhone || "",
+              time: u.createdAt
+                ? new Date(u.createdAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })
+                : new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+              notes: u.studentProfile?.guardianName ? `ولي الأمر: ${u.studentProfile.guardianName}` : undefined,
+            });
+          });
+        }
+
+        // B. Pending Session/Halaqa Join Requests
+        if (data.joinRequests && Array.isArray(data.joinRequests)) {
+          data.joinRequests
+            .filter((r: any) => r.status === "PENDING")
+            .forEach((r: any) => {
+              pendingItems.push({
+                id: `join-${r.id}`,
+                type: "SESSION_JOIN",
+                requestId: r.id,
+                studentId: r.studentId,
+                studentUserId: r.student?.user?.id,
+                studentName: r.student?.user?.name || "طالب العلم",
+                studentAvatar: r.student?.user?.avatar,
+                phone: r.student?.user?.phone,
+                time: r.createdAt
+                  ? new Date(r.createdAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })
+                  : new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+                halaqaId: r.halaqaId,
+                halaqaName: r.halaqa?.name || "الحلقة القرآنية",
+                notes: r.notes,
+              });
+            });
+        }
+
+        if (isMounted && pendingItems.length > 0) {
+          setQueue((prev) => {
+            const existingKeys = new Set(prev.map((i) => i.studentUserId || i.studentId || i.id));
+            const freshItems = pendingItems.filter((i) => !existingKeys.has(i.studentUserId || i.studentId || i.id));
+            return freshItems.length > 0 ? [...prev, ...freshItems] : prev;
+          });
+        }
+      } catch {}
+    };
+
+    syncPendingRequests();
+    const timer = setInterval(syncPendingRequests, 6000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [isTeacherOrAdmin]);
+
+  // 3. Realtime notification listeners (Instant reactive wakeup)
   useEffect(() => {
     if (!isTeacherOrAdmin || !lastEvent) return;
 
@@ -92,8 +164,7 @@ export function SheikhDecisionOverlay() {
         notes: p.notes,
       };
       setQueue((prev) => {
-        // avoid duplicates
-        if (prev.some((item) => item.studentUserId === newItem.studentUserId && item.type === "REGISTRATION")) {
+        if (prev.some((item) => (item.studentUserId === newItem.studentUserId || item.id === newItem.id) && item.type === "REGISTRATION")) {
           return prev;
         }
         return [...prev, newItem];

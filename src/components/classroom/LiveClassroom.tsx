@@ -251,17 +251,6 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [requestSuccessMsg, setRequestSuccessMsg] = useState("");
 
-  const [teacherJoinToast, setTeacherJoinToast] = useState<{
-    visible: boolean;
-    requestId?: string;
-    sessionId?: string;
-    halaqaId?: string;
-    studentId?: string;
-    studentName?: string;
-    studentAvatar?: string;
-    isAccepting?: boolean;
-    accepted?: boolean;
-  } | null>(null);
 
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
@@ -366,50 +355,10 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       lastEvent.type === "JOIN_REQUEST_SUBMITTED"
     ) {
       if (isTeacher) {
-        const p = lastEvent.payload;
-        playTeacherJoinAlertSound();
-        setTeacherJoinToast({
-          visible: true,
-          requestId: p.requestId,
-          sessionId: p.sessionId || sessionId,
-          halaqaId: p.halaqaId,
-          studentId: p.studentId,
-          studentName: p.studentName || "طالب العلم",
-          studentAvatar: p.studentAvatar,
-          isAccepting: false,
-          accepted: false,
-        });
+        fetchSession();
       }
     }
   }, [lastEvent, isTeacher, sessionId]);
-
-  // Handle teacher 1-click accept inside classroom
-  const handleTeacherAcceptInClass = async () => {
-    if (!teacherJoinToast) return;
-    setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: true } : null));
-    try {
-      const res = await fetch("/api/teacher/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "ACCEPT_JOIN_SESSION",
-          sessionId: teacherJoinToast.sessionId || sessionId,
-          halaqaId: teacherJoinToast.halaqaId,
-          studentId: teacherJoinToast.studentId,
-          requestId: teacherJoinToast.requestId,
-        }),
-      });
-
-      if (res.ok) {
-        setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false, accepted: true } : null));
-        setTimeout(() => setTeacherJoinToast(null), 3000);
-      } else {
-        setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false } : null));
-      }
-    } catch {
-      setTeacherJoinToast((prev) => (prev ? { ...prev, isAccepting: false } : null));
-    }
-  };
 
   // Handle submitting join request directly from gatekeeper screen (1-click direct tap)
   const handleSendJoinRequestFromGate = async () => {
@@ -1038,45 +987,6 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] bg-slate-950 text-white rounded-2xl overflow-hidden shadow-2xl border border-slate-800 relative">
-      {/* Teacher in-room join request toast */}
-      {teacherJoinToast?.visible && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] animate-in slide-in-from-top duration-200">
-          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950 text-white rounded-2xl p-4 shadow-2xl border-2 border-emerald-500/70 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                <Bell className="w-5 h-5 animate-bounce" />
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] font-black text-amber-300 block">طلب انضمام للحلقة</span>
-                <span className="text-xs font-bold text-white block">{teacherJoinToast.studentName}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {teacherJoinToast.accepted ? (
-                <span className="text-xs font-bold text-emerald-400">تم القبول ✅</span>
-              ) : (
-                <>
-                  <button
-                    onClick={handleTeacherAcceptInClass}
-                    disabled={teacherJoinToast.isAccepting}
-                    className="flex items-center gap-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow transition"
-                  >
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span>{teacherJoinToast.isAccepting ? "جارٍ القبول..." : "قبول ودخول ✅"}</span>
-                  </button>
-                  <button
-                    onClick={() => setTeacherJoinToast(null)}
-                    className="text-slate-400 hover:text-white p-1 rounded-lg"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Teacher Student Hand Raise Toast */}
       {isTeacher && studentHandAlert?.visible && (
