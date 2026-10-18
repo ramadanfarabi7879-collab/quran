@@ -142,22 +142,20 @@ export default function LoginPage() {
                 <span className="text-[11px] font-bold text-emerald-600">دخول المعلم ←</span>
               </button>
 
-              <button
-                onClick={() =>
-                  handleQuickDirectLogin("STUDENT", "student@quran.com", "/student/dashboard")
-                }
-                className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 text-right transition flex items-center justify-between"
+              <Link
+                href="/register"
+                className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 text-right transition flex items-center justify-between group"
               >
                 <div>
-                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                    عبد الرحمن محمد العلي
+                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-300">
+                    بوابة تسجيل الطلاب الجدد
                   </span>
                   <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                    بوابة الطالب المسجل
+                    طلب انضمام طالب للأكاديمية والالتحاق بالحلقات
                   </span>
                 </div>
-                <span className="text-[11px] font-bold text-emerald-600">دخول الطالب ←</span>
-              </button>
+                <span className="text-[11px] font-bold text-emerald-600">تسجيل طالب جديد ←</span>
+              </Link>
 
               <button
                 onClick={() => handleQuickDirectLogin("ADMIN", "admin@quran.com", "/admin/dashboard")}
