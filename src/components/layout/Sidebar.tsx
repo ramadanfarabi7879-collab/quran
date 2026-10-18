@@ -24,6 +24,7 @@ import {
   LogOut,
   LogIn,
   UserPlus,
+  UserCheck,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -49,8 +50,9 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
 
   const teacherNav = [
     { name: "لوحة التحكم", href: "/teacher/dashboard", icon: LayoutDashboard },
+    { name: "إدارة الطلبات", href: "/teacher/requests", icon: UserCheck },
     { name: "إدارة الحلقات", href: "/teacher/halaqat", icon: CalendarDays },
-    { name: "إدارة الطلاب والطلبات", href: "/teacher/students", icon: Users },
+    { name: "إدارة الطلاب", href: "/teacher/students", icon: Users },
     { name: "الحضور والغياب", href: "/teacher/attendance", icon: CheckSquare },
     { name: "المصحف التفاعلي والتسميع", href: "/teacher/mushaf", icon: BookOpen },
     { name: "الواجبات والتكليفات", href: "/teacher/assignments", icon: FileCheck2 },
@@ -75,10 +77,11 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
 
   const adminNav = [
     { name: "لوحة الإدارة الشاملة والصلاحيات", href: "/admin/dashboard", icon: LayoutDashboard },
+    { name: "إدارة الطلبات", href: "/teacher/requests", icon: UserCheck },
     { name: "لوحة الحلقات والتعليم المباشر", href: "/teacher/dashboard", icon: Video },
     { name: "إدارة المستخدمين والمعلمين", href: "/admin/dashboard?tab=USERS", icon: Users },
     { name: "إدارة الحلقات والمواعيد", href: "/teacher/halaqat", icon: CalendarDays },
-    { name: "إدارة الطلاب وطلبات الانضمام", href: "/teacher/students", icon: Users },
+    { name: "إدارة الطلاب", href: "/teacher/students", icon: Users },
     { name: "المصحف التفاعلي والتسميع", href: "/teacher/mushaf", icon: BookOpen },
     { name: "الواجبات والتكليفات", href: "/teacher/assignments", icon: FileCheck2 },
     { name: "سجل الحفظ والتقييم", href: "/teacher/evaluations", icon: Award },

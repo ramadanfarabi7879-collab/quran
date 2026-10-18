@@ -72,14 +72,40 @@ export async function GET(req: Request) {
       orderBy: { createdAt: "desc" },
     });
 
-    // 4. Pending New Student Registrations (isActive: false)
+    // 4. Pending New Student Registrations (isActive: false and not rejected)
     const pendingRegistrations = await prisma.user.findMany({
       where: {
         role: "STUDENT",
         isActive: false,
+        notifications: {
+          none: {
+            type: "REGISTRATION_REJECTED",
+          },
+        },
       },
       include: {
         studentProfile: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // 5. Rejected Student Registrations (for history/archive)
+    const rejectedRegistrations = await prisma.user.findMany({
+      where: {
+        role: "STUDENT",
+        isActive: false,
+        notifications: {
+          some: {
+            type: "REGISTRATION_REJECTED",
+          },
+        },
+      },
+      include: {
+        studentProfile: true,
+        notifications: {
+          where: { type: "REGISTRATION_REJECTED" },
+          take: 1,
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -89,6 +115,7 @@ export async function GET(req: Request) {
       deletedStudents,
       joinRequests,
       pendingRegistrations,
+      rejectedRegistrations,
     });
   } catch (error) {
     console.error("Get students error:", error);

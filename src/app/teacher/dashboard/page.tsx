@@ -509,10 +509,10 @@ export default function TeacherDashboard() {
                 طلبات تسجيل طلاب جدد على المنصة بحاجة لاعتمادك ({pendingRegistrations.length})
               </span>
               <Link
-                href="/teacher/students?tab=pending"
-                className="text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:underline"
+                href="/teacher/requests"
+                className="text-xs font-black text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1"
               >
-                إدارة كافة الطلبات ←
+                <span>الانتقال إلى إدارة الطلبات والاعتمادات ←</span>
               </Link>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

@@ -56,6 +56,31 @@ export function SheikhDecisionOverlay() {
   const [submitting, setSubmitting] = useState(false);
   const [actionDoneMsg, setActionDoneMsg] = useState<string | null>(null);
 
+  // Helper: Persist handled/dismissed requests in sessionStorage so they NEVER reappear as popups
+  const markHandled = (item?: DecisionItem | null) => {
+    if (!item) return;
+    try {
+      const raw = sessionStorage.getItem("sheikh_handled_requests") || "[]";
+      const list: string[] = JSON.parse(raw);
+      const keys = [item.id, item.studentUserId, item.studentId, item.requestId].filter(Boolean) as string[];
+      keys.forEach((k) => {
+        if (!list.includes(k)) list.push(k);
+      });
+      sessionStorage.setItem("sheikh_handled_requests", JSON.stringify(list));
+    } catch {}
+  };
+
+  const isItemHandled = (key?: string | null) => {
+    if (!key) return false;
+    try {
+      const raw = sessionStorage.getItem("sheikh_handled_requests") || "[]";
+      const list: string[] = JSON.parse(raw);
+      return list.includes(key);
+    } catch {
+      return false;
+    }
+  };
+
   // 1. Load existing halaqat schedules for suggestions
   useEffect(() => {
     if (!isTeacherOrAdmin) return;
@@ -87,9 +112,10 @@ export function SheikhDecisionOverlay() {
 
         const pendingItems: DecisionItem[] = [];
 
-        // A. Pending New Student Registrations (isActive: false)
+        // A. Pending New Student Registrations (isActive: false, not handled)
         if (data.pendingRegistrations && Array.isArray(data.pendingRegistrations)) {
           data.pendingRegistrations.forEach((u: any) => {
+            if (isItemHandled(u.id)) return;
             pendingItems.push({
               id: `reg-${u.id}`,
               type: "REGISTRATION",
@@ -107,7 +133,7 @@ export function SheikhDecisionOverlay() {
         // B. Pending Session/Halaqa Join Requests
         if (data.joinRequests && Array.isArray(data.joinRequests)) {
           data.joinRequests
-            .filter((r: any) => r.status === "PENDING")
+            .filter((r: any) => r.status === "PENDING" && !isItemHandled(r.id) && !isItemHandled(r.studentId))
             .forEach((r: any) => {
               pendingItems.push({
                 id: `join-${r.id}`,
@@ -131,7 +157,13 @@ export function SheikhDecisionOverlay() {
         if (isMounted && pendingItems.length > 0) {
           setQueue((prev) => {
             const existingKeys = new Set(prev.map((i) => i.studentUserId || i.studentId || i.id));
-            const freshItems = pendingItems.filter((i) => !existingKeys.has(i.studentUserId || i.studentId || i.id));
+            const freshItems = pendingItems.filter(
+              (i) =>
+                !existingKeys.has(i.studentUserId || i.studentId || i.id) &&
+                !isItemHandled(i.studentUserId) &&
+                !isItemHandled(i.studentId) &&
+                !isItemHandled(i.id)
+            );
             return freshItems.length > 0 ? [...prev, ...freshItems] : prev;
           });
         }
@@ -153,11 +185,14 @@ export function SheikhDecisionOverlay() {
     // 1. New student registration
     if (lastEvent.type === "STUDENT_REGISTRATION_SUBMITTED") {
       const p = lastEvent.payload;
+      const targetUserId = p.studentUserId || p.studentId;
+      if (isItemHandled(targetUserId)) return;
+
       playTeacherJoinAlertSound();
       const newItem: DecisionItem = {
-        id: `reg-${p.studentUserId || p.studentId}-${Date.now()}`,
+        id: `reg-${targetUserId}-${Date.now()}`,
         type: "REGISTRATION",
-        studentUserId: p.studentUserId || p.studentId,
+        studentUserId: targetUserId,
         studentName: p.studentName || "طالب جديد",
         phone: p.phone,
         time: p.time || new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
@@ -174,6 +209,8 @@ export function SheikhDecisionOverlay() {
     // 2. Student requested to join live session
     if (lastEvent.type === "SESSION_JOIN_REQUESTED" || lastEvent.type === "JOIN_REQUEST_SUBMITTED") {
       const p = lastEvent.payload;
+      if (isItemHandled(p.requestId) || isItemHandled(p.studentId)) return;
+
       playTeacherJoinAlertSound();
       const newItem: DecisionItem = {
         id: `sess-${p.sessionId || "live"}-${p.studentId}-${Date.now()}`,
@@ -209,6 +246,9 @@ export function SheikhDecisionOverlay() {
   }, [queue, activeItem]);
 
   const dismissCurrent = () => {
+    if (activeItem) {
+      markHandled(activeItem);
+    }
     setActiveItem(null);
     setShowRescheduleDrawer(false);
     setCustomTime("");
@@ -231,153 +271,126 @@ export function SheikhDecisionOverlay() {
     "غداً صباحاً (09:00 ص)",
   ].filter((v, i, a) => a.indexOf(v) === i).slice(0, 5);
 
-  // 1. Unified Accept Handler
+  // 1. Unified Accept Handler - Disappears IMMEDIATELY
   const handleAccept = async () => {
-    setSubmitting(true);
+    const current = activeItem;
+    if (!current) return;
+    markHandled(current);
+    dismissCurrent(); // Instant vanish from screen!
+
     try {
-      if (activeItem.type === "REGISTRATION") {
-        const res = await fetch("/api/teacher/students", {
+      if (current.type === "REGISTRATION") {
+        await fetch("/api/teacher/students", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "APPROVE_STUDENT_REGISTRATION",
-            studentUserId: activeItem.studentUserId,
+            studentUserId: current.studentUserId,
             track: selectedTrack,
             targetHalaqaId: selectedHalaqaId,
           }),
         });
-        if (res.ok) {
-          playChimePing();
-          setActionDoneMsg("تم اعتماد الحساب وتحديد المسار بنجاح ✅");
-          setTimeout(dismissCurrent, 2200);
-        } else {
-          alert("فشل تأكيد القبول");
-        }
+        playChimePing();
       } else {
-        // Session join
-        const res = await fetch("/api/teacher/attendance", {
+        await fetch("/api/teacher/attendance", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "ACCEPT_JOIN_SESSION",
-            sessionId: activeItem.sessionId,
-            halaqaId: activeItem.halaqaId,
-            studentId: activeItem.studentId,
-            requestId: activeItem.requestId,
+            sessionId: current.sessionId,
+            halaqaId: current.halaqaId,
+            studentId: current.studentId,
+            requestId: current.requestId,
           }),
         });
-        if (res.ok) {
-          playChimePing();
-          setActionDoneMsg("تم قبول ودخول الطالب للقاعة مباشرة 🎥");
-          setTimeout(dismissCurrent, 2200);
-        } else {
-          alert("فشل تأكيد القبول");
-        }
+        playChimePing();
       }
-    } catch {
-      alert("حدث خطأ أثناء تنفيذ الإجراء");
-    } finally {
-      setSubmitting(false);
+    } catch (err) {
+      console.error("Accept error:", err);
     }
   };
 
-  // 2. Unified Reschedule / Comment Handler
+  // 2. Unified Reschedule / Comment Handler - Disappears IMMEDIATELY
   const handleRescheduleSubmit = async () => {
+    const current = activeItem;
+    if (!current) return;
     const finalTime = customTime.trim() || suggestedTimes[0];
     if (!finalTime) {
       alert("يرجى اختيار أو كتابة الموعد");
       return;
     }
 
-    setSubmitting(true);
+    markHandled(current);
+    dismissCurrent(); // Instant vanish from screen!
+
     try {
-      if (activeItem.type === "REGISTRATION") {
-        const res = await fetch("/api/teacher/students", {
+      if (current.type === "REGISTRATION") {
+        await fetch("/api/teacher/students", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "RESCHEDULE_STUDENT_REGISTRATION",
-            studentUserId: activeItem.studentUserId,
+            studentUserId: current.studentUserId,
             scheduledTime: finalTime,
             comment: teacherComment,
           }),
         });
-        if (res.ok) {
-          playChimePing();
-          setActionDoneMsg(`تم إرسال الموعد المقترح (${finalTime}) للطالب ✅`);
-          setTimeout(dismissCurrent, 2500);
-        } else {
-          alert("فشل إرسال الموعد");
-        }
+        playChimePing();
       } else {
-        // Session join
-        const res = await fetch("/api/teacher/attendance", {
+        await fetch("/api/teacher/attendance", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "RESCHEDULE_JOIN_SESSION",
-            sessionId: activeItem.sessionId,
-            studentId: activeItem.studentId,
-            requestId: activeItem.requestId,
+            sessionId: current.sessionId,
+            studentId: current.studentId,
+            requestId: current.requestId,
             scheduledTime: finalTime,
             notes: teacherComment,
           }),
         });
-        if (res.ok) {
-          playChimePing();
-          setActionDoneMsg(`تم تأجيل حضور الطالب وإخطاره بالموعد (${finalTime}) ✅`);
-          setTimeout(dismissCurrent, 2500);
-        } else {
-          alert("فشل إرسال الموعد البديل");
-        }
+        playChimePing();
       }
-    } catch {
-      alert("حدث خطأ أثناء حفظ الموعد");
-    } finally {
-      setSubmitting(false);
+    } catch (err) {
+      console.error("Reschedule error:", err);
     }
   };
 
-  // 3. Unified Reject / Decline Handler
+  // 3. Unified Reject / Decline Handler - Disappears IMMEDIATELY
   const handleReject = async () => {
+    const current = activeItem;
+    if (!current) return;
     if (!confirm("هل أنت متأكد من الاعتذار عن هذا الطلب؟")) return;
-    setSubmitting(true);
+
+    markHandled(current);
+    dismissCurrent(); // Instant vanish from screen!
+
     try {
-      if (activeItem.type === "REGISTRATION") {
-        const res = await fetch("/api/teacher/students", {
+      if (current.type === "REGISTRATION") {
+        await fetch("/api/teacher/students", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "REJECT_STUDENT_REGISTRATION",
-            studentUserId: activeItem.studentUserId,
+            studentUserId: current.studentUserId,
             reason: teacherComment || "نعتذر لاكتمال النصاب حالياً",
           }),
         });
-        if (res.ok) {
-          setActionDoneMsg("تم الاعتذار عن قبول الطلب ❌");
-          setTimeout(dismissCurrent, 2000);
-        }
       } else {
-        const res = await fetch("/api/teacher/attendance", {
+        await fetch("/api/teacher/attendance", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "REJECT_JOIN_SESSION",
-            sessionId: activeItem.sessionId,
-            studentId: activeItem.studentId,
-            requestId: activeItem.requestId,
+            sessionId: current.sessionId,
+            studentId: current.studentId,
+            requestId: current.requestId,
             reason: teacherComment || "اعتذار عن قبول الجلسة الحالية",
           }),
         });
-        if (res.ok) {
-          setActionDoneMsg("تم الاعتذار عن قبول الجلسة ❌");
-          setTimeout(dismissCurrent, 2000);
-        }
       }
-    } catch {
-      alert("حدث خطأ");
-    } finally {
-      setSubmitting(false);
+    } catch (err) {
+      console.error("Reject error:", err);
     }
   };
 

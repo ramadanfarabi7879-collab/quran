@@ -91,11 +91,11 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
     fetchNotifications();
     checkActiveSession();
 
-    // 3-second fallback interval to guarantee notification delivery on all devices & mobile
+    // 15-second fallback interval to keep performance smooth and lightweight
     const interval = setInterval(() => {
       checkActiveSession();
       fetchNotifications();
-    }, 3000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [user]);
@@ -275,6 +275,18 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
             >
               {isDark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
             </button>
+
+            {/* Requests Management Quick Button for Teacher/Admin */}
+            {(user?.role === "TEACHER" || user?.role === "ADMIN") && (
+              <Link
+                href="/teacher/requests"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-sm transition active:scale-95"
+                title="إدارة طلبات تسجيل الطلاب والانضمام للحلقات"
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>إدارة الطلبات</span>
+              </Link>
+            )}
 
             {/* Notification Bell */}
             <div className="relative">

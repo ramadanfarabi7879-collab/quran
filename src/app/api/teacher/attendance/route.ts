@@ -276,6 +276,27 @@ export async function POST(req: Request) {
         }).catch(() => {});
       }
 
+      // Also mark JoinRequest as REJECTED so it never remains pending
+      if (body.requestId) {
+        await prisma.joinRequest.updateMany({
+          where: { id: body.requestId },
+          data: {
+            status: "REJECTED",
+            rejectReason: body.reason || "اعتذار عن قبول الجلسة",
+            reviewedAt: new Date(),
+          },
+        }).catch(() => {});
+      } else if (resolvedStudentId) {
+        await prisma.joinRequest.updateMany({
+          where: { studentId: resolvedStudentId, status: "PENDING" },
+          data: {
+            status: "REJECTED",
+            rejectReason: body.reason || "اعتذار عن قبول الجلسة",
+            reviewedAt: new Date(),
+          },
+        }).catch(() => {});
+      }
+
       const studentProfile = resolvedStudentId
         ? await prisma.studentProfile.findUnique({
             where: { id: resolvedStudentId },
@@ -326,6 +347,27 @@ export async function POST(req: Request) {
             isVerifiedByTeacher: false,
             requestedCheckIn: false,
             notes: `موعد بديل: ${scheduledTime} - ${notes}`,
+          },
+        }).catch(() => {});
+      }
+
+      // Also mark JoinRequest as resolved with scheduled time
+      if (body.requestId) {
+        await prisma.joinRequest.updateMany({
+          where: { id: body.requestId },
+          data: {
+            status: "ACCEPTED",
+            notes: `موعد بديل: ${scheduledTime} - ${notes}`,
+            reviewedAt: new Date(),
+          },
+        }).catch(() => {});
+      } else if (resolvedStudentId) {
+        await prisma.joinRequest.updateMany({
+          where: { studentId: resolvedStudentId, status: "PENDING" },
+          data: {
+            status: "ACCEPTED",
+            notes: `موعد بديل: ${scheduledTime} - ${notes}`,
+            reviewedAt: new Date(),
           },
         }).catch(() => {});
       }
