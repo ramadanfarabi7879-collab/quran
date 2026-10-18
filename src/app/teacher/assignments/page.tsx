@@ -229,14 +229,9 @@ export default function TeacherAssignmentsPage() {
                           className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800 gap-3"
                         >
                           <div className="flex items-center gap-3">
-                            <img
-                              src={
-                                sub.student?.user?.avatar ||
-                                "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=150"
-                              }
-                              alt=""
-                              className="w-8 h-8 rounded-full object-cover"
-                            />
+                            <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-center text-xs shrink-0">
+                              {sub.student?.user?.name?.[0] || "ط"}
+                            </div>
                             <div>
                               <span className="font-bold text-xs text-slate-900 dark:text-slate-100 block">
                                 {sub.student?.user?.name}

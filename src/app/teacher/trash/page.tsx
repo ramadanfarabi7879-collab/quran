@@ -77,14 +77,9 @@ export default function TeacherTrashPage() {
                   className="p-4 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
                 >
                   <div className="flex items-center gap-3">
-                    <img
-                      src={
-                        enr.student?.user?.avatar ||
-                        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150"
-                      }
-                      alt={enr.student?.user?.name}
-                      className="w-10 h-10 rounded-full object-cover grayscale"
-                    />
+                    <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold flex items-center justify-center text-sm shrink-0">
+                      {enr.student?.user?.name?.[0] || "ط"}
+                    </div>
                     <div>
                       <span className="font-bold text-sm text-slate-900 dark:text-slate-100 block">
                         {enr.student?.user?.name}

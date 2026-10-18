@@ -350,7 +350,7 @@ export async function POST(req: Request) {
       sessionId: liveSession.id,
       title: sessionTitle,
       halaqaName: halaqa.name,
-      teacherName: user.name || "معلم ومقرئ الحلقة",
+      teacherName: user?.name || "معلم ومقرئ الحلقة",
     };
 
     realtimeHub.broadcast(`halaqa-${halaqaId}`, {

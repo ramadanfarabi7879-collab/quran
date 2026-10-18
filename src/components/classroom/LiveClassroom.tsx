@@ -1359,14 +1359,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                   className="flex items-center justify-between p-2 rounded-xl bg-slate-800/60 border border-slate-800"
                 >
                   <div className="flex items-center gap-2.5">
-                    <img
-                      src={
-                        enr.student?.user?.avatar ||
-                        "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=150"
-                      }
-                      alt={enr.student?.user?.name}
-                      className="w-7 h-7 rounded-full object-cover"
-                    />
+                    <div className="w-7 h-7 rounded-full bg-emerald-950/70 text-emerald-300 border border-emerald-500/30 font-bold flex items-center justify-center text-xs shrink-0">
+                      {enr.student?.user?.name?.[0] || "ط"}
+                    </div>
                     <div>
                       <span className="block text-xs font-bold text-slate-200">
                         {enr.student?.user?.name}

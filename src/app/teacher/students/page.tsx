@@ -371,14 +371,9 @@ export default function TeacherStudentsPage() {
                         >
                           <td className="p-3.5">
                             <div className="flex items-center gap-2.5">
-                              <img
-                                src={
-                                  enr.student?.user?.avatar ||
-                                  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150"
-                                }
-                                alt={enr.student?.user?.name}
-                                className="w-8 h-8 rounded-full object-cover"
-                              />
+                              <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-center text-xs shrink-0">
+                                {enr.student?.user?.name?.[0] || "ط"}
+                              </div>
                               <div>
                                 <span className="block font-bold text-slate-900 dark:text-slate-100">
                                   {enr.student?.user?.name}
@@ -602,14 +597,9 @@ export default function TeacherStudentsPage() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={
-                          req.student?.user?.avatar ||
-                          "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&q=80&w=150"
-                        }
-                        alt={req.student?.user?.name}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
+                      <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold flex items-center justify-center text-sm shrink-0">
+                        {req.student?.user?.name?.[0] || "ط"}
+                      </div>
                       <div>
                         <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
                           {req.student?.user?.name}
@@ -802,14 +792,9 @@ export default function TeacherStudentsPage() {
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={
-                      studentDetailModal.student?.user?.avatar ||
-                      "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=150"
-                    }
-                    alt=""
-                    className="w-12 h-12 rounded-full object-cover"
-                  />
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-center text-lg shrink-0">
+                    {studentDetailModal.student?.user?.name?.[0] || "ط"}
+                  </div>
                   <div>
                     <h3 className="font-black text-base text-slate-900 dark:text-slate-100">
                       {studentDetailModal.student?.user?.name}

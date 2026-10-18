@@ -4,10 +4,28 @@ import { AUTH_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: Request) {
   try {
-    const { email, password } = await req.json();
+    const body = await req.json();
+    const identifier = (body.email || body.phone || body.identifier || "").trim();
+    const password = (body.password || "").trim();
 
-    const user = await prisma.user.findUnique({
-      where: { email },
+    if (!identifier || !password) {
+      return NextResponse.json(
+        { error: "يرجى إدخال رقم الجوال أو البريد الإلكتروني وكلمة المرور" },
+        { status: 400 }
+      );
+    }
+
+    const cleanPhone = identifier.replace(/[\s\-\+]/g, "");
+
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: identifier },
+          { phone: identifier },
+          { phone: { contains: cleanPhone } },
+          { email: `stu_${cleanPhone}@quran.local` },
+        ],
+      },
       include: {
         teacherProfile: true,
         studentProfile: true,
@@ -16,7 +34,7 @@ export async function POST(req: Request) {
 
     if (!user || user.password !== password) {
       return NextResponse.json(
-        { error: "البريد الإلكتروني أو كلمة المرور غير صحيحة" },
+        { error: "رقم الجوال / البريد الإلكتروني أو كلمة المرور غير صحيحة" },
         { status: 401 }
       );
     }
@@ -24,7 +42,7 @@ export async function POST(req: Request) {
     if (!user.isActive) {
       const msg =
         user.role === "STUDENT"
-          ? "طلبك لا يزال قيد المراجعة والاعتماد لدى فضيلة الشيخ أحمد علي. سيتم تفعيل حسابك فور الموافقة عليه، ويمكنك التواصل مع إدارة المنصة للمتابعة."
+          ? "طلبك لا يزال قيد المراجعة والاعتماد لدى فضيلة الشيخ. سيتم تفعيل حسابك فور الموافقة والتواصل معك عبر رقم هاتفك المسجل."
           : "هذا الحساب موقوف، يرجى التواصل مع إدارة المنصة";
       return NextResponse.json(
         { error: msg, isPendingApproval: user.role === "STUDENT" },

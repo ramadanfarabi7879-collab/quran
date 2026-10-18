@@ -5,15 +5,64 @@ import { realtimeHub } from "@/lib/realtime";
 
 export async function POST(req: Request) {
   try {
-    const { name, email, password, role, phone, guardianName, guardianPhone } = await req.json();
+    const body = await req.json();
+    const {
+      name,
+      email,
+      password,
+      role,
+      phone,
+      age,
+      currentLevel,
+      preferredTrack,
+      guardianName,
+      guardianPhone,
+      registrationNotes,
+    } = body;
 
-    if (!name || !email || !password) {
-      return NextResponse.json({ error: "جميع الحقول الأساسية مطلوبة" }, { status: 400 });
+    const trimmedName = (name || "").trim();
+    const trimmedPhone = (phone || "").trim();
+    const trimmedPassword = (password || "").trim();
+    const trimmedEmail = (email || "").trim();
+
+    if (!trimmedName || !trimmedPhone || !trimmedPassword) {
+      return NextResponse.json(
+        { error: "الاسم ورقم الجوال وكلمة المرور حقول أساسية مطلوبة" },
+        { status: 400 }
+      );
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    // Auto-generate unique placeholder email if not provided by student
+    const finalEmail =
+      trimmedEmail ||
+      `stu_${trimmedPhone.replace(/\D/g, "") || Date.now()}@quran.local`;
+
+    // Check if phone or email already registered
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(trimmedEmail ? [{ email: trimmedEmail }] : []),
+          { phone: trimmedPhone },
+          { email: finalEmail },
+        ],
+      },
+    });
+
     if (existing) {
-      return NextResponse.json({ error: "البريد الإلكتروني مسجل مسبقاً" }, { status: 400 });
+      if (!existing.isActive) {
+        return NextResponse.json(
+          {
+            error:
+              "لديك طلب تسجيل مرسل بالفعل وهو قيد المراجعة والاعتماد لدى فضيلة الشيخ. سيتم التواصل معك قريباً.",
+            requiresApproval: true,
+          },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json(
+        { error: "رقم الجوال أو البريد الإلكتروني مسجل بالفعل على المنصة" },
+        { status: 400 }
+      );
     }
 
     const userRole = role === "TEACHER" ? "TEACHER" : "STUDENT";
@@ -21,18 +70,18 @@ export async function POST(req: Request) {
 
     const user = await prisma.user.create({
       data: {
-        name,
-        email,
-        password,
+        name: trimmedName,
+        email: finalEmail,
+        password: trimmedPassword,
         role: userRole,
-        phone,
-        isActive: !isStudent, // Students require Sheikh approval before activation
+        phone: trimmedPhone,
+        isActive: !isStudent, // Students require Sheikh review and approval
         ...(userRole === "TEACHER"
           ? {
               teacherProfile: {
                 create: {
                   title: "المعلم",
-                  bio: "معلم قرآن كريم وتجويد",
+                  bio: "معلم ومقرئ قرآن كريم",
                 },
               },
             }
@@ -40,8 +89,12 @@ export async function POST(req: Request) {
               studentProfile: {
                 create: {
                   studentNumber: `STU-${Math.floor(1000 + Math.random() * 9000)}`,
-                  guardianName,
-                  guardianPhone,
+                  guardianName: guardianName?.trim() || null,
+                  guardianPhone: guardianPhone?.trim() || null,
+                  age: age ? parseInt(String(age), 10) : null,
+                  currentLevel: currentLevel || "مبتدئ / تأسيس",
+                  preferredTrack: preferredTrack || "GROUP",
+                  registrationNotes: registrationNotes?.trim() || null,
                 },
               },
             }),
@@ -53,6 +106,14 @@ export async function POST(req: Request) {
     });
 
     if (isStudent) {
+      const parsedAge = age ? `${age} سنة` : "";
+      const trackLabel =
+        preferredTrack === "INDIVIDUAL"
+          ? "مسار فردي"
+          : preferredTrack === "FOUNDATION"
+          ? "مسار تأسيس"
+          : "حلقة جماعية";
+
       // 1. Notify Teachers and Admin in DB
       try {
         const teachersAndAdmins = await prisma.user.findMany({
@@ -64,9 +125,9 @@ export async function POST(req: Request) {
             data: {
               userId: t.id,
               title: "طلب تسجيل طالب جديد",
-              body: `سجّل الطالب الجديد ${name} على المنصة، بانتظار اعتمادك وتفعيل حسابه.`,
+              body: `سجّل الطالب الجديد ${trimmedName} (${parsedAge || "طالب"} - ${currentLevel || "مبتدئ"} - رغبة: ${trackLabel})، بانتظار اعتمادك وتحديد مساره وموعده.`,
               type: "STUDENT_REGISTRATION_SUBMITTED",
-              link: "/teacher/students",
+              link: "/teacher/requests",
             },
           });
         }
@@ -82,6 +143,12 @@ export async function POST(req: Request) {
           studentUserId: user.id,
           studentName: user.name,
           phone: user.phone || "",
+          age: age || "",
+          currentLevel: currentLevel || "",
+          preferredTrack: preferredTrack || "GROUP",
+          guardianName: guardianName || "",
+          guardianPhone: guardianPhone || "",
+          notes: registrationNotes || "",
           time: new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
         },
       });
@@ -90,11 +157,11 @@ export async function POST(req: Request) {
         success: true,
         requiresApproval: true,
         message:
-          "تم تسجيل بياناتك بنجاح! طلبك الآن قيد المراجعة والاعتماد لدى فضيلة الشيخ أحمد علي. سيتم تفعيله فور الموافقة عليه، ويمكنك تسجيل الدخول بعدها.",
+          "تم استلام طلب تسجيلك بنجاح! انتهى دورك هنا، وطلبك الآن قيد المعالجة والمراجعة لدى فضيلة الشيخ لتحديد المسار والموعد المناسب.",
         user: {
           id: user.id,
           name: user.name,
-          email: user.email,
+          phone: user.phone,
           role: user.role,
         },
       });

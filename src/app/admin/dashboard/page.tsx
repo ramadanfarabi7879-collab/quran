@@ -840,14 +840,9 @@ export default function AdminDashboardPage() {
                             {/* User details */}
                             <td className="p-3.5">
                               <div className="flex items-center gap-3">
-                                <img
-                                  src={
-                                    u.avatar ||
-                                    "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150"
-                                  }
-                                  alt=""
-                                  className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-                                />
+                                  <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold flex items-center justify-center text-xs shrink-0 border border-slate-200 dark:border-slate-700">
+                                    {u.name?.[0] || "م"}
+                                  </div>
                                 <div>
                                   <span className="font-bold text-slate-900 dark:text-slate-100 text-xs block">
                                     {u.name}

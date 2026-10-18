@@ -9,7 +9,7 @@ generator client {
 
 model User {
   id               String          @id @default(cuid())
-  email            String          @unique
+  email            String?         @unique
   name             String
   password         String
   role             String          // "ADMIN" | "TEACHER" | "STUDENT"
@@ -55,6 +55,11 @@ model StudentProfile {
   guardianName        String?
   guardianPhone       String?
   birthDate           DateTime?
+  age                 Int?
+  currentLevel        String?
+  preferredTrack      String?
+  registrationNotes   String?
+  scheduledAppointment String?
   currentJuz          Int                  @default(1)
   totalMemorizedAyahs Int                  @default(0)
   totalReviewedAyahs  Int                  @default(0)

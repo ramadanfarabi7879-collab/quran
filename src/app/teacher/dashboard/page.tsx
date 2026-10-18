@@ -571,14 +571,9 @@ export default function TeacherDashboard() {
                   className="bg-white dark:bg-slate-900 p-3 rounded-xl flex items-center justify-between border border-amber-200/60 dark:border-slate-800"
                 >
                   <div className="flex items-center gap-2.5">
-                    <img
-                      src={
-                        req.student?.user?.avatar ||
-                        "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&q=80&w=150"
-                      }
-                      alt={req.student?.user?.name}
-                      className="w-8 h-8 rounded-full object-cover"
-                    />
+                    <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold flex items-center justify-center text-xs shrink-0">
+                      {req.student?.user?.name?.[0] || "ط"}
+                    </div>
                     <div>
                       <span className="block text-xs font-bold text-slate-900 dark:text-slate-100">
                         {req.student?.user?.name}

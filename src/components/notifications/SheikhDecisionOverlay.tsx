@@ -35,6 +35,11 @@ interface DecisionItem {
   halaqaName?: string;
   notes?: string;
   requestId?: string;
+  age?: number | string;
+  currentLevel?: string;
+  preferredTrack?: "INDIVIDUAL" | "GROUP" | "FOUNDATION";
+  guardianName?: string;
+  guardianPhone?: string;
 }
 
 export function SheikhDecisionOverlay() {
@@ -112,7 +117,12 @@ export function SheikhDecisionOverlay() {
               time: u.createdAt
                 ? new Date(u.createdAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })
                 : new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
-              notes: u.studentProfile?.guardianName ? `ولي الأمر: ${u.studentProfile.guardianName}` : undefined,
+              age: u.studentProfile?.age,
+              currentLevel: u.studentProfile?.currentLevel,
+              preferredTrack: u.studentProfile?.preferredTrack || "GROUP",
+              guardianName: u.studentProfile?.guardianName,
+              guardianPhone: u.studentProfile?.guardianPhone,
+              notes: u.studentProfile?.registrationNotes || (u.studentProfile?.guardianName ? `ولي الأمر: ${u.studentProfile.guardianName}` : undefined),
             });
           });
         }
@@ -201,6 +211,11 @@ export function SheikhDecisionOverlay() {
         studentName: p.studentName || "طالب جديد",
         phone: p.phone,
         time: p.time || new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+        age: p.age,
+        currentLevel: p.currentLevel,
+        preferredTrack: p.preferredTrack || "GROUP",
+        guardianName: p.guardianName,
+        guardianPhone: p.guardianPhone,
         notes: p.notes,
       };
       setQueue((prev) => {
@@ -242,7 +257,11 @@ export function SheikhDecisionOverlay() {
   // Set active item when queue updates
   useEffect(() => {
     if (!activeItem && queue.length > 0) {
-      setActiveItem(queue[0]);
+      const first = queue[0];
+      setActiveItem(first);
+      if (first.preferredTrack) {
+        setSelectedTrack(first.preferredTrack);
+      }
       setShowRescheduleDrawer(false);
       setCustomTime("");
       setTeacherComment("");
@@ -451,28 +470,66 @@ export function SheikhDecisionOverlay() {
             </div>
 
             {/* Student Info Card */}
-            <div className="flex items-center gap-3 bg-white/5 rounded-2xl p-3 border border-white/10">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-slate-950 font-black flex items-center justify-center text-lg shrink-0 shadow-lg">
-                {activeItem.studentAvatar ? (
-                  <img
-                    src={activeItem.studentAvatar}
-                    alt={activeItem.studentName}
-                    className="w-full h-full rounded-2xl object-cover"
-                  />
-                ) : (
-                  activeItem.studentName.charAt(0) || "ط"
-                )}
-              </div>
-              <div className="flex-1 min-w-0 text-right">
-                <h4 className="text-base font-black text-white truncate">{activeItem.studentName}</h4>
-                <p className="text-xs text-slate-300 truncate">
-                  {isRegistration ? (
-                    activeItem.phone ? `الهاتف: ${activeItem.phone}` : "طالب جديد ينتظر تحديد مساره"
+            <div className="bg-white/5 rounded-2xl p-3 border border-white/10 space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-slate-950 font-black flex items-center justify-center text-lg shrink-0 shadow-lg">
+                  {activeItem.studentAvatar ? (
+                    <img
+                      src={activeItem.studentAvatar}
+                      alt={activeItem.studentName}
+                      className="w-full h-full rounded-2xl object-cover"
+                    />
                   ) : (
-                    `يرغب في الدخول إلى: ${activeItem.halaqaName}`
+                    activeItem.studentName.charAt(0) || "ط"
                   )}
-                </p>
+                </div>
+                <div className="flex-1 min-w-0 text-right">
+                  <h4 className="text-base font-black text-white truncate">{activeItem.studentName}</h4>
+                  <p className="text-xs text-slate-300 truncate">
+                    {isRegistration ? (
+                      activeItem.phone ? `الجوال / واتساب: ${activeItem.phone}` : "طالب جديد ينتظر تحديد مساره"
+                    ) : (
+                      `يرغب في الدخول إلى: ${activeItem.halaqaName}`
+                    )}
+                  </p>
+                </div>
               </div>
+
+              {/* Extended details for student registration */}
+              {isRegistration && (
+                <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-white/10 text-[11px]">
+                  {activeItem.age && (
+                    <div className="bg-white/5 px-2.5 py-1 rounded-lg">
+                      <span className="text-slate-400">السن: </span>
+                      <span className="font-bold text-amber-300">{activeItem.age} سنة</span>
+                    </div>
+                  )}
+                  {activeItem.currentLevel && (
+                    <div className="bg-white/5 px-2.5 py-1 rounded-lg truncate">
+                      <span className="text-slate-400">المستوى: </span>
+                      <span className="font-bold text-emerald-300 truncate">{activeItem.currentLevel}</span>
+                    </div>
+                  )}
+                  {activeItem.preferredTrack && (
+                    <div className="bg-white/5 px-2.5 py-1 rounded-lg col-span-2">
+                      <span className="text-slate-400">رغبة الطالب: </span>
+                      <span className="font-bold text-amber-200">
+                        {activeItem.preferredTrack === "INDIVIDUAL"
+                          ? "حلقة خاصة فردية"
+                          : activeItem.preferredTrack === "FOUNDATION"
+                          ? "مسار التأسيس والقاعدة النورانية"
+                          : "حلقة جماعية"}
+                      </span>
+                    </div>
+                  )}
+                  {activeItem.notes && (
+                    <div className="bg-white/5 px-2.5 py-1.5 rounded-lg col-span-2 text-slate-200 text-[11px] leading-relaxed">
+                      <span className="text-slate-400 font-bold block mb-0.5">ملاحظات الطالب:</span>
+                      {activeItem.notes}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* If New Registration: Sheikh Selects Track / Group (مطلوب من الشيخ بناء على معلومات الطالب) */}

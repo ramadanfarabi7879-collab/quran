@@ -422,8 +422,17 @@ export default function TeacherRequestsManagementPage() {
                               </span>
                             </h3>
                             <span className="text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1 mt-0.5">
-                              <Mail className="w-3 h-3 text-slate-400" />
-                              {stu.email}
+                              {stu.email && !stu.email.includes("@quran.local") ? (
+                                <>
+                                  <Mail className="w-3 h-3 text-slate-400" />
+                                  {stu.email}
+                                </>
+                              ) : (
+                                <>
+                                  <Phone className="w-3 h-3 text-emerald-600" />
+                                  {stu.phone || "تسجيل برقم الجوال"}
+                                </>
+                              )}
                             </span>
                           </div>
                         </div>
@@ -435,11 +444,33 @@ export default function TeacherRequestsManagementPage() {
                       </div>
 
                       {/* Student Info Details */}
-                      <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl text-xs">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl text-xs">
                         <div>
-                          <span className="text-slate-400 block text-[10px]">رقم الجوال:</span>
+                          <span className="text-slate-400 block text-[10px]">الجوال / واتساب:</span>
                           <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
                             {stu.phone || "غير محدد"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">العمر / السن:</span>
+                          <span className="font-bold text-amber-600 dark:text-amber-300">
+                            {stu.studentProfile?.age ? `${stu.studentProfile.age} سنة` : "غير محدد"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">المستوى القرآني:</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate block">
+                            {stu.studentProfile?.currentLevel || "مبتدئ / تأسيس"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">المسار المفضل للطالب:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                            {stu.studentProfile?.preferredTrack === "INDIVIDUAL"
+                              ? "حلقة خاصة فردية"
+                              : stu.studentProfile?.preferredTrack === "FOUNDATION"
+                              ? "مسار التأسيس"
+                              : "حلقة جماعية"}
                           </span>
                         </div>
                         {stu.studentProfile?.guardianName && (
@@ -456,6 +487,12 @@ export default function TeacherRequestsManagementPage() {
                             <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
                               {stu.studentProfile.guardianPhone}
                             </span>
+                          </div>
+                        )}
+                        {stu.studentProfile?.registrationNotes && (
+                          <div className="col-span-2 sm:col-span-3 bg-white dark:bg-slate-900/50 p-2 rounded-xl border border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
+                            <span className="font-bold text-slate-700 dark:text-slate-200 block mb-0.5">ملاحظات الطالب لفضيلة الشيخ:</span>
+                            {stu.studentProfile.registrationNotes}
                           </div>
                         )}
                       </div>
@@ -649,14 +686,9 @@ export default function TeacherRequestsManagementPage() {
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <img
-                            src={
-                              req.student?.user?.avatar ||
-                              "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150"
-                            }
-                            alt={req.student?.user?.name}
-                            className="w-12 h-12 rounded-2xl object-cover shadow-md"
-                          />
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-slate-950 font-black flex items-center justify-center text-lg shadow-md shrink-0">
+                            {req.student?.user?.name?.[0] || "ط"}
+                          </div>
                           <div>
                             <h3 className="font-black text-sm text-slate-900 dark:text-slate-100">
                               {req.student?.user?.name || "طالب العلم"}

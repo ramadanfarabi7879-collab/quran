@@ -2,7 +2,7 @@ export type UserRole = "ADMIN" | "TEACHER" | "STUDENT";
 
 export interface CurrentUser {
   id: string;
-  email: string;
+  email?: string | null;
   name: string;
   role: UserRole;
   avatar?: string | null;
