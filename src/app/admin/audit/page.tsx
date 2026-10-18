@@ -8,24 +8,10 @@ export default function AdminAuditPage() {
   const [logs, setLogs] = useState<any[]>([
     {
       id: "1",
-      action: "UPDATE_PLATFORM_SETTINGS",
-      details: "تحديث اسم المنصة والبريد الإلكتروني الرسمي للدعم الفني",
+      action: "PLATFORM_INIT",
+      details: "اكتمال تهيئة المنصة وتفعيل الصلاحيات الرسمية للإدارة",
       createdAt: new Date().toISOString(),
-      user: { name: "مدير المنصة العام" },
-    },
-    {
-      id: "2",
-      action: "ROLE_CHANGE",
-      details: "ترقية المستخدم الشيخ أحمد المنشاوي إلى رتبة معلم ومقرئ معتمد",
-      createdAt: new Date(Date.now() - 3600000).toISOString(),
-      user: { name: "مدير المنصة العام" },
-    },
-    {
-      id: "3",
-      action: "HALAQA_CREATED",
-      details: "إنشاء حلقة الفجر المباركة وإضافة الجداول الزمنية الأسبوعية",
-      createdAt: new Date(Date.now() - 7200000).toISOString(),
-      user: { name: "الشيخ أحمد المنشاوي" },
+      user: { name: "النظام" },
     },
   ]);
 

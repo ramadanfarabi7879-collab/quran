@@ -88,7 +88,7 @@ export default function JoinHalaqaPage() {
                 <div className="text-xs text-slate-600 dark:text-slate-300 space-y-1 pt-2 border-t border-slate-100 dark:border-slate-800">
                   <div className="flex justify-between">
                     <span className="text-slate-400">المعلم:</span>
-                    <span className="font-bold">{h.teacher?.user?.name || "الشيخ المنشاوي"}</span>
+                    <span className="font-bold">{h.teacher?.user?.name || "معلم ومقرئ الحلقة"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">المواعيد:</span>

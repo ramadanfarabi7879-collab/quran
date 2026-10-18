@@ -151,7 +151,7 @@ export default function SimulationPage() {
               <div className="w-3 h-3 rounded-full bg-emerald-500" />
               <User className="w-4 h-4 text-emerald-400" />
               <span className="font-bold text-xs text-slate-200">
-                شاشة المعلم: الشيخ أحمد المنشاوي
+                شاشة المعلم والمقرئ
               </span>
             </div>
             <span className="text-[10px] text-amber-300 font-bold bg-amber-950/60 border border-amber-400/20 px-2.5 py-0.5 rounded-md">

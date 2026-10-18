@@ -74,8 +74,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         setLiveModal({
           open: true,
           sessionId: payload?.sessionId,
-          halaqaName: payload?.halaqaName || "حلقة الفجر والتحفيظ والتجويد",
-          teacherName: payload?.teacherName || "الشيخ أحمد المنشاوي",
+          halaqaName: payload?.halaqaName || "الحلقة القرآنية",
+          teacherName: payload?.teacherName || "معلم ومقرئ الحلقة",
           title: payload?.title,
           approvalStatus: "APPROVED",
         });
@@ -174,8 +174,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 return {
                   open: true,
                   sessionId: sess.id,
-                  halaqaName: sess.halaqa?.name || "حلقة الفجر والتحفيظ والتجويد",
-                  teacherName: sess.halaqa?.teacher?.user?.name || "الشيخ أحمد المنشاوي",
+                  halaqaName: sess.halaqa?.name || "الحلقة القرآنية",
+                  teacherName: sess.halaqa?.teacher?.user?.name || "معلم ومقرئ الحلقة",
                   title: sess.title,
                   approvalStatus: status,
                 };

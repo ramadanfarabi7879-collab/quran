@@ -34,10 +34,10 @@ export async function GET() {
         teacherUser = await prisma.user.create({
           data: {
             email: "teacher@quran.com",
-            name: "الشيخ أحمد المنشاوي",
+            name: "معلم ومقرئ الحلقة",
             password: "teacher",
             role: "TEACHER",
-            avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+            avatar: null,
             phone: "+966500000002",
             isActive: true,
             teacherProfile: {

@@ -359,14 +359,17 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
                   }
                   className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                 >
-                  <img
-                    src={
-                      user.avatar ||
-                      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150"
-                    }
-                    alt={user.name}
-                    className="w-8 h-8 rounded-full object-cover ring-2 ring-emerald-600/30"
-                  />
+                  {user.avatar ? (
+                    <img
+                      src={user.avatar}
+                      alt={user.name}
+                      className="w-8 h-8 rounded-full object-cover ring-2 ring-emerald-600/30"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-xl bg-islamic-800 text-gold-accent flex items-center justify-center font-black text-xs ring-2 ring-emerald-600/30 shadow-sm">
+                      {user.name?.[0] || "م"}
+                    </div>
+                  )}
                   <div className="hidden sm:flex flex-col text-right">
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">
                       {user.name}

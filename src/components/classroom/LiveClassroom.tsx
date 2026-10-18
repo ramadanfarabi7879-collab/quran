@@ -231,7 +231,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const [authStatus, setAuthStatus] = useState<"CHECKING" | "AUTHORIZED" | "PENDING_APPROVAL" | "NEEDS_REQUEST" | "REJECTED">("CHECKING");
   const [halaqaInfo, setHalaqaInfo] = useState<{ name: string; teacherName: string; id: string }>({
     name: "حلقة التحفيظ والتجويد",
-    teacherName: "فضيلة الشيخ أحمد المنشاوي",
+    teacherName: "فضيلة المعلم",
     id: "",
   });
   const [submittingRequest, setSubmittingRequest] = useState(false);
@@ -285,7 +285,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       : user?.role === "TEACHER" || user?.role === "ADMIN" || session?.halaqa?.teacher?.userId === user?.id;
 
   const myRole = isTeacher ? "teacher" : "student";
-  const myName = user?.name || (isTeacher ? "الشيخ أحمد المنشاوي" : "عبد الرحمن محمد العلي");
+  const myName = user?.name || (isTeacher ? "معلم الحلقة" : "طالب العلم");
 
   // Fetch session details & verify Sheikh approval
   const fetchSession = async () => {
@@ -296,7 +296,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         setSession(data.session);
 
         const hName = data.halaqaName || data.session?.halaqa?.name || "حلقة القرآن الكريم";
-        const tName = data.teacherName || data.session?.halaqa?.teacher?.user?.name || "فضيلة الشيخ أحمد المنشاوي";
+        const tName = data.teacherName || data.session?.halaqa?.teacher?.user?.name || "معلم الحلقة";
         const hId = data.halaqaId || data.session?.halaqaId || data.session?.halaqa?.id || "";
 
         setHalaqaInfo({ name: hName, teacherName: tName, id: hId });
@@ -1109,10 +1109,10 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             </span>
           )}
           <span className="font-bold text-sm text-slate-100 hidden sm:inline">
-            {session?.halaqa?.name || "حلقة الفجر والتحفيظ والتجويد"}
+            {session?.halaqa?.name || "الحلقة القرآنية"}
           </span>
           <span className="text-xs text-slate-400 hidden sm:inline">
-            • المعلم: {session?.halaqa?.teacher?.user?.name || "الشيخ أحمد المنشاوي"}
+            • المعلم: {session?.halaqa?.teacher?.user?.name || "معلم الحلقة"}
           </span>
         </div>
 
@@ -1198,11 +1198,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                   />
                   {!isVideoOn && (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900">
-                      <img
-                        src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
-                        alt="Teacher"
-                        className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/50 mb-1"
-                      />
+                      <div className="w-12 h-12 rounded-2xl bg-islamic-800 text-gold-accent flex items-center justify-center font-black text-sm ring-2 ring-emerald-500/50 mb-1 shadow">
+                        ش
+                      </div>
                       <span className="text-[10px] text-slate-400">الكاميرا متوقفة</span>
                     </div>
                   )}
@@ -1218,11 +1216,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                   />
                   {!hasRemoteStream && (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-center p-2">
-                      <img
-                        src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
-                        alt="Teacher"
-                        className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/50 mb-1"
-                      />
+                      <div className="w-12 h-12 rounded-2xl bg-islamic-800 text-gold-accent flex items-center justify-center font-black text-sm ring-2 ring-emerald-500/50 mb-1 shadow">
+                        ش
+                      </div>
                       <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                         بانتظار بث المعلم...
@@ -1241,7 +1237,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                 ) : (
                   <Volume2 className="w-3 h-3 text-emerald-400" />
                 )}
-                <span>{isTeacher ? "الشيخ المنشاوي (أنت)" : (session?.halaqa?.teacher?.user?.name || "الشيخ المنشاوي")}</span>
+                <span>{isTeacher ? "المعلم (أنت)" : (session?.halaqa?.teacher?.user?.name || "معلم الحلقة")}</span>
               </div>
             </div>
 
@@ -1265,11 +1261,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                   />
                   {!isVideoOn && (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900">
-                      <img
-                        src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200"
-                        alt="Student"
-                        className="w-12 h-12 rounded-full object-cover ring-2 ring-gold-accent/50 mb-1"
-                      />
+                      <div className="w-12 h-12 rounded-2xl bg-slate-800 text-amber-300 flex items-center justify-center font-black text-sm ring-2 ring-gold-accent/50 mb-1 shadow">
+                        ط
+                      </div>
                       <span className="text-[10px] text-slate-400">الكاميرا متوقفة</span>
                     </div>
                   )}
@@ -1285,11 +1279,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                   />
                   {!hasRemoteStream && (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-center p-2">
-                      <img
-                        src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200"
-                        alt="Student"
-                        className="w-12 h-12 rounded-full object-cover ring-2 ring-gold-accent/50 mb-1"
-                      />
+                      <div className="w-12 h-12 rounded-2xl bg-slate-800 text-amber-300 flex items-center justify-center font-black text-sm ring-2 ring-gold-accent/50 mb-1 shadow">
+                        ط
+                      </div>
                       <span className="text-[10px] text-amber-300 font-bold flex items-center gap-1">
                         <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                         بانتظار انضمام الطالب...

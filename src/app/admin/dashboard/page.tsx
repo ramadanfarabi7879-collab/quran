@@ -1067,7 +1067,7 @@ export default function AdminDashboardPage() {
                           <div className="flex justify-between">
                             <span className="text-slate-400">المعلم المقرئ:</span>
                             <span className="font-bold text-slate-900 dark:text-slate-100">
-                              {h.teacher?.user?.name || "الشيخ المنشاوي"}
+                              {h.teacher?.user?.name || "معلم ومقرئ الحلقة"}
                             </span>
                           </div>
                           <div className="flex justify-between">

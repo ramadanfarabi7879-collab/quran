@@ -171,8 +171,8 @@ export default function StudentDashboard() {
   };
 
   const profile = user?.studentProfile || {
-    currentJuz: 3,
-    totalMemorizedAyahs: 286,
+    currentJuz: 0,
+    totalMemorizedAyahs: 0,
   };
   const recentEvaluation = evaluations[0];
   const pendingAssignments = assignments.slice(0, 2);
@@ -255,7 +255,7 @@ export default function StudentDashboard() {
               مرحباً بك يا طالب العلم
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-white">
-              {user?.name || "عبد الرحمن العلي"}
+              {user?.name || "طالب العلم"}
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-lg leading-relaxed">
               وفقك الله لحفظ كتابه العزيز. يمكنك متابعة واجباتك وحضور حلقاتك والمصحف من هنا.
@@ -328,35 +328,41 @@ export default function StudentDashboard() {
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <span className="text-xs font-bold text-slate-400 block mb-1">الجزء الحالي</span>
             <span className="text-2xl font-black text-emerald-600">
-              الجزء {profile?.currentJuz || 3}
+              {profile?.currentJuz ? `الجزء ${profile.currentJuz}` : "—"}
             </span>
-            <span className="text-[11px] text-slate-500 block mt-1">سورة البقرة المباركة</span>
+            <span className="text-[11px] text-slate-500 block mt-1">
+              {profile?.currentJuz ? "مقرر الحفظ الجاري" : "لم يُحدد بعد"}
+            </span>
           </div>
 
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <span className="text-xs font-bold text-slate-400 block mb-1">إجمالي الآيات المحفوظة</span>
             <span className="text-2xl font-black text-islamic-800 dark:text-emerald-400">
-              {profile?.totalMemorizedAyahs || 286} آية
+              {profile?.totalMemorizedAyahs ? `${profile.totalMemorizedAyahs} آية` : "٠ آية"}
             </span>
             <span className="text-[11px] text-emerald-600 font-semibold block mt-1">
-              موثقة من المعلم
+              {profile?.totalMemorizedAyahs ? "موثقة من المعلم" : "في انتظار بدء التسميع"}
             </span>
           </div>
 
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <span className="text-xs font-bold text-slate-400 block mb-1">آخر تقييم تسميع</span>
             <span className="text-2xl font-black text-amber-500">
-              {recentEvaluation ? `${recentEvaluation.score}%` : "٩٥%"}
+              {recentEvaluation ? `${recentEvaluation.score}%` : "—"}
             </span>
             <span className="text-[11px] text-amber-600 font-semibold block mt-1">
-              {recentEvaluation?.gradeLabel || "ممتاز"}
+              {recentEvaluation?.gradeLabel || "لا يوجد تقييم بعد"}
             </span>
           </div>
 
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <span className="text-xs font-bold text-slate-400 block mb-1">نسبة الالتزام بالحضور</span>
-            <span className="text-2xl font-black text-purple-600">١٠٠%</span>
-            <span className="text-[11px] text-purple-600 font-semibold block mt-1">منتظم وملتزم</span>
+            <span className="text-2xl font-black text-purple-600">
+              {evaluations.length > 0 ? "١٠٠%" : "—"}
+            </span>
+            <span className="text-[11px] text-purple-600 font-semibold block mt-1">
+              {evaluations.length > 0 ? "منتظم وملتزم" : "في انتظار الحضور"}
+            </span>
           </div>
         </div>
 
@@ -382,33 +388,39 @@ export default function StudentDashboard() {
             </div>
 
             <div className="space-y-3">
-              {pendingAssignments.map((a) => (
-                <div
-                  key={a.id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                      {a.title}
-                    </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                      مستحق
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    {a.instructions || "يرجى مراعاة أحكام النون الساكنة والتنوين."}
-                  </p>
-                  <div className="flex items-center justify-between pt-1 text-[11px] text-slate-400">
-                    <span>آخر موعد: {new Date(a.dueDate).toLocaleDateString("ar-SA")}</span>
-                    <Link
-                      href="/student/assignments"
-                      className="text-xs font-bold text-emerald-600 hover:underline"
-                    >
-                      تسليم التسجيل الصوتي
-                    </Link>
-                  </div>
+              {pendingAssignments.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">
+                  لا توجد واجبات أو تكليفات مستحقة حالياً.
                 </div>
-              ))}
+              ) : (
+                pendingAssignments.map((a) => (
+                  <div
+                    key={a.id}
+                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                        {a.title}
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                        مستحق
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      {a.instructions || "يرجى مراعاة أحكام النون الساكنة والتنوين."}
+                    </p>
+                    <div className="flex items-center justify-between pt-1 text-[11px] text-slate-400">
+                      <span>آخر موعد: {new Date(a.dueDate).toLocaleDateString("ar-SA")}</span>
+                      <Link
+                        href="/student/assignments"
+                        className="text-xs font-bold text-emerald-600 hover:underline"
+                      >
+                        تسليم التسجيل الصوتي
+                      </Link>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -428,41 +440,46 @@ export default function StudentDashboard() {
               </Link>
             </div>
 
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50/50 to-amber-50/30 dark:from-slate-800/60 dark:to-emerald-950/20 border border-emerald-100 dark:border-slate-800 space-y-3">
-              <div className="flex items-center gap-3">
-                <img
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
-                  alt="Teacher"
-                  className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/30"
-                />
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                    الشيخ أحمد المنشاوي
-                  </h3>
-                  <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold block">
-                    معلم ومقرئ حلقة الفجر المباركة
-                  </span>
+            {hasApprovedHalaqa ? (
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50/50 to-amber-50/30 dark:from-slate-800/60 dark:to-emerald-950/20 border border-emerald-100 dark:border-slate-800 space-y-3">
+                <div className="flex items-center gap-3">
+                  {approvedHalaqat[0].teacher?.user?.avatar ? (
+                    <img
+                      src={approvedHalaqat[0].teacher.user.avatar}
+                      alt="Teacher"
+                      className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/30"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-2xl bg-islamic-800 text-gold-accent flex items-center justify-center font-black text-base shadow ring-2 ring-emerald-500/30">
+                      {approvedHalaqat[0].teacher?.user?.name?.[0] || "م"}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                      {approvedHalaqat[0].teacher?.user?.name || "معلم ومقرئ الحلقة"}
+                    </h3>
+                    <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold block">
+                      {approvedHalaqat[0].name}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
-                <div className="flex justify-between">
-                  <span>الأيام:</span>
-                  <span className="font-bold">السبت، الإثنين، الأربعاء</span>
+                <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <div className="flex justify-between">
+                    <span>الأيام:</span>
+                    <span className="font-bold">{approvedHalaqat[0].scheduleDays || "مجدولة"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>الوقت:</span>
+                    <span className="font-bold font-mono">{approvedHalaqat[0].startTime} - {approvedHalaqat[0].endTime}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>المستوى:</span>
+                    <span className="font-bold text-emerald-600">{approvedHalaqat[0].level || "عام"}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span>الوقت:</span>
-                  <span className="font-bold font-mono">05:30 - 07:00 صباحاً</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>المستوى:</span>
-                  <span className="font-bold text-emerald-600">متقدم (حفظ وتثبيت)</span>
-                </div>
-              </div>
 
-              {/* Single Dynamic Action Button: طلب انضمام -> في انتظار قبول الشيخ ⏳ -> متابعة الحلقة 🎥 */}
-              <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
-                {hasApprovedHalaqa ? (
+                <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
                   <Link
                     href={`/classroom/${approvedHalaqat[0].currentLiveSessionId || approvedHalaqat[0].id}?role=student`}
                     className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black text-xs py-3 rounded-2xl shadow-md transition-transform hover:scale-102 active:scale-98"
@@ -471,27 +488,44 @@ export default function StudentDashboard() {
                     <Video className="w-4 h-4" />
                     <span>متابعة الحلقة 🎥</span>
                   </Link>
-                ) : hasPendingHalaqa ? (
-                  <div
-                    className="w-full flex items-center justify-center gap-2 bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold text-xs py-3 rounded-2xl"
-                    title="طلبك قيد موافقة الشيخ"
-                  >
-                    <Clock className="w-4 h-4 text-amber-600 animate-spin" />
-                    <span>في انتظار قبول الشيخ ⏳</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => handleStudent1ClickJoin(undefined, halaqat[0]?.id)}
-                    disabled={requestingSession}
-                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-xs py-3 rounded-2xl shadow transition-transform hover:scale-102 active:scale-98 disabled:opacity-50"
-                    title="طلب الانضمام إلى الحلقة"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    <span>{requestingSession ? "جارٍ إرسال الطلب للشيخ..." : "طلب انضمام"}</span>
-                  </button>
-                )}
+                </div>
               </div>
-            </div>
+            ) : hasPendingHalaqa ? (
+              <div className="p-6 text-center space-y-3 bg-amber-50/50 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-900/50">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 flex items-center justify-center">
+                  <Clock className="w-6 h-6 animate-spin" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs text-amber-900 dark:text-amber-200">
+                    طلبك قيد موافقة واعتماد الشيخ ⏳
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    تم إرسال طلب انضمامك إلى {pendingHalaqat[0]?.name || "الحلقة"}، وسيصلك إشعار فوري عند الاعتماد.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-8 text-center space-y-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center">
+                  <CalendarDays className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                    لم تنضم إلى حلقة بعد
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    يمكنك استعراض الحلقات المتاحة وتقديم طلب انضمام لبدء رحلتك في الحفظ والمدارسة.
+                  </p>
+                </div>
+                <Link
+                  href="/student/my-halaqat"
+                  className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow transition"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>تصفح الحلقات القرآنية</span>
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -133,10 +133,10 @@ export default function LoginPage() {
               >
                 <div>
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                    فضيلة الشيخ أحمد المنشاوي
+                    بوابة المعلم والمقرئ
                   </span>
                   <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                    بوابة المعلم والمقرئ
+                    تسجيل الدخول المباشر لمعلم الحلقات
                   </span>
                 </div>
                 <span className="text-[11px] font-bold text-emerald-600">دخول المعلم ←</span>

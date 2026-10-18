@@ -140,7 +140,7 @@ export async function GET(req: Request) {
       session,
       isAuthorized,
       authorizationStatus,
-      teacherName: session?.halaqa?.teacher?.user?.name || "فضيلة الشيخ أحمد المنشاوي",
+      teacherName: session?.halaqa?.teacher?.user?.name || "معلم ومقرئ الحلقة",
       halaqaName: session?.halaqa?.name || "",
       halaqaId: session?.halaqaId || session?.halaqa?.id || "",
     });
@@ -211,10 +211,10 @@ export async function POST(req: Request) {
         const teacherUser = await prisma.user.create({
           data: {
             email: "teacher@quran.com",
-            name: "الشيخ أحمد المنشاوي",
+            name: "معلم ومقرئ الحلقة",
             password: "teacher",
             role: "TEACHER",
-            avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+            avatar: null,
             phone: "+966500000002",
             isActive: true,
             teacherProfile: {
@@ -350,7 +350,7 @@ export async function POST(req: Request) {
       sessionId: liveSession.id,
       title: sessionTitle,
       halaqaName: halaqa.name,
-      teacherName: user.name || "الشيخ أحمد المنشاوي",
+      teacherName: user.name || "معلم ومقرئ الحلقة",
     };
 
     realtimeHub.broadcast(`halaqa-${halaqaId}`, {
