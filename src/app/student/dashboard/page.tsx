@@ -96,7 +96,7 @@ export default function StudentDashboard() {
           halaqa: { name: payload?.halaqaName || "حلقة الفجر لتحفيظ القرآن" },
           status: "ACTIVE",
         });
-        setSessionAuthStatus("NEEDS_REQUEST");
+        setSessionAuthStatus("AUTHORIZED");
       } else if (lastEvent.type === "HALAQA_LIVE_ENDED") {
         setActiveSession(null);
         setSessionAuthStatus("NO_ACTIVE_SESSION");

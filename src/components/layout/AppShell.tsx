@@ -77,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           halaqaName: payload?.halaqaName || "حلقة الفجر والتحفيظ والتجويد",
           teacherName: payload?.teacherName || "الشيخ أحمد المنشاوي",
           title: payload?.title,
-          approvalStatus: "NOT_REQUESTED",
+          approvalStatus: "APPROVED",
         });
       }
     }

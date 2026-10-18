@@ -43,23 +43,9 @@ const ICE_SERVERS: RTCConfiguration = {
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
     { urls: "stun:global.stun.twilio.com:3478" },
-    { urls: "stun:openrelay.metered.ca:80" },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turns:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
   ],
   iceCandidatePoolSize: 10,
 };
@@ -288,6 +274,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const iceCandidatesQueue = useRef<RTCIceCandidateInit[]>([]);
   const lastSignalIdRef = useRef<number>(0);
+  const [clientId] = useState(() => "peer-" + Math.random().toString(36).substring(2, 9));
 
   // Determine if this screen is Teacher
   const isTeacher =
@@ -430,10 +417,11 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionId,
+          sessionId: session?.id || sessionId,
           signalType,
           senderRole: myRole,
           senderName: myName,
+          senderClientId: clientId,
           data: payload,
         }),
       });
@@ -447,8 +435,10 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     if (!localStreamRef.current) return;
     const senders = pc.getSenders();
     localStreamRef.current.getTracks().forEach((track) => {
-      const alreadySending = senders.some((s) => s.track && s.track.id === track.id);
-      if (!alreadySending) {
+      const existingSender = senders.find((s) => s.track && s.track.kind === track.kind);
+      if (existingSender) {
+        existingSender.replaceTrack(track).catch(() => {});
+      } else {
         try {
           pc.addTrack(track, localStreamRef.current!);
         } catch (e) {
@@ -484,44 +474,76 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       if (!remoteStreamRef.current) {
         remoteStreamRef.current = new MediaStream();
       }
-      // Add track to remote stream if not already present
       if (!remoteStreamRef.current.getTracks().some((t) => t.id === event.track.id)) {
         remoteStreamRef.current.addTrack(event.track);
       }
 
       const stream = remoteStreamRef.current;
 
-      if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== stream) {
-        remoteVideoRef.current.srcObject = stream;
+      if (remoteVideoRef.current) {
+        if (remoteVideoRef.current.srcObject !== stream) {
+          remoteVideoRef.current.srcObject = stream;
+        }
         remoteVideoRef.current.play().catch(() => {});
       }
 
-      if (remoteAudioRef.current && remoteAudioRef.current.srcObject !== stream) {
-        remoteAudioRef.current.srcObject = stream;
+      if (remoteAudioRef.current) {
+        if (remoteAudioRef.current.srcObject !== stream) {
+          remoteAudioRef.current.srcObject = stream;
+        }
         remoteAudioRef.current.play().catch(() => {
           setNeedsAudioUnlock(true);
         });
       }
 
-      // Attach audio analyser to detect when the remote peer is speaking
       setupAudioAnalyser(stream, setRemoteIsSpeaking);
-
       setHasRemoteStream(true);
       setConnectionStatus("متصل مباشرة");
     };
 
-    pc.onconnectionstatechange = () => {
-      console.log("WebRTC Connection State changed to:", pc.connectionState);
-      if (pc.connectionState === "connected") {
+    pc.oniceconnectionstatechange = () => {
+      console.log("ICE Connection State changed to:", pc.iceConnectionState);
+      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
         setHasRemoteStream(true);
         setConnectionStatus("متصل مباشرة");
-      } else if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
-        setHasRemoteStream(false);
+      } else if (pc.iceConnectionState === "failed") {
+        setConnectionStatus("جارٍ إعادة محاولة الربط...");
+        if (isTeacher) {
+          try {
+            pc.restartIce();
+            triggerOffer("ICE_RESTART");
+          } catch {}
+        }
+      } else if (pc.iceConnectionState === "disconnected") {
         setConnectionStatus("انقطع الاتصال - جارٍ إعادة المحاولة...");
       }
     };
 
     return pc;
+  };
+
+  // Dedicated Offer Trigger with state guards
+  const triggerOffer = async (reason: string) => {
+    if (!isTeacher) return;
+    const pc = getOrCreatePeerConnection();
+    syncLocalTracks(pc);
+
+    if (pc.signalingState !== "stable") {
+      console.log("Cannot trigger offer right now, signalingState is", pc.signalingState);
+      return;
+    }
+
+    try {
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+      });
+      await pc.setLocalDescription(offer);
+      await sendSignalingMessage("OFFER", offer);
+      console.log("Teacher sent offer successfully. Reason:", reason);
+    } catch (e) {
+      console.error("Create offer error:", e);
+    }
   };
 
   // Setup local camera & microphone stream with intelligent fallback
@@ -582,13 +604,16 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       // Attach audio analyser for local speech detection
       setupAudioAnalyser(stream, setLocalIsSpeaking);
 
-      // Attach tracks to existing PC if already created
-      if (peerConnectionRef.current) {
-        syncLocalTracks(peerConnectionRef.current);
-      }
+      // Attach tracks to PC
+      const pc = getOrCreatePeerConnection();
+      syncLocalTracks(pc);
 
       // Announce presence immediately
       await sendSignalingMessage("PRESENCE", { role: myRole, name: myName });
+
+      if (isTeacher) {
+        setTimeout(() => triggerOffer("INIT_MEDIA"), 500);
+      }
     };
 
     initMedia();
@@ -612,8 +637,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     const pollSignals = async () => {
       if (!active) return;
       try {
+        const targetSess = session?.id || sessionId;
         const res = await fetch(
-          `/api/classroom/signal?sessionId=${sessionId}&role=${myRole}&since=${lastSignalIdRef.current}`
+          `/api/classroom/signal?sessionId=${targetSess}&role=${myRole}&clientId=${clientId}&since=${lastSignalIdRef.current}`
         );
         if (res.ok) {
           const data = await res.json();
@@ -644,31 +670,15 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       try {
         if (signalType === "PRESENCE") {
           setConnectionStatus("تم رصد الطرف الآخر - جارٍ التوصيل...");
-          // If Teacher sees a peer announce presence, Teacher initiates Offer
           if (isTeacher) {
-            syncLocalTracks(pc);
-            if (pc.signalingState === "stable") {
-              const offer = await pc.createOffer({
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: true,
-              });
-              await pc.setLocalDescription(offer);
-              await sendSignalingMessage("OFFER", offer);
-            }
+            triggerOffer("PRESENCE_RECEIVED");
           } else {
-            // Student echoes presence back
             await sendSignalingMessage("PRESENCE_ACK", { role: myRole, name: myName });
           }
         } else if (signalType === "PRESENCE_ACK") {
           setConnectionStatus("تم الرد من الطرف الآخر - جاري إرسال العرض...");
-          if (isTeacher && pc.signalingState === "stable") {
-            syncLocalTracks(pc);
-            const offer = await pc.createOffer({
-              offerToReceiveAudio: true,
-              offerToReceiveVideo: true,
-            });
-            await pc.setLocalDescription(offer);
-            await sendSignalingMessage("OFFER", offer);
+          if (isTeacher) {
+            triggerOffer("PRESENCE_ACK_RECEIVED");
           }
         } else if (signalType === "OFFER") {
           // Student receives Offer from Teacher
@@ -685,6 +695,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await sendSignalingMessage("ANSWER", answer);
+          console.log("Student sent answer to Teacher");
         } else if (signalType === "ANSWER") {
           // Teacher receives Answer from Student
           setConnectionStatus("تم استقبال رد الطالب - جاري استكمال الربط...");
@@ -695,6 +706,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
               const candidate = iceCandidatesQueue.current.shift();
               if (candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
             }
+            console.log("Teacher set remote description from Answer");
           }
         } else if (signalType === "ICE_CANDIDATE") {
           if (pc.remoteDescription && pc.remoteDescription.type) {
@@ -748,6 +760,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     const heartbeat = setInterval(() => {
       if (!hasRemoteStream) {
         sendSignalingMessage("PRESENCE", { role: myRole, name: myName });
+        if (isTeacher && peerConnectionRef.current?.signalingState === "stable") {
+          triggerOffer("HEARTBEAT_RETRY");
+        }
       }
     }, 3000);
 
@@ -756,20 +771,40 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       clearInterval(interval);
       clearInterval(heartbeat);
     };
-  }, [sessionId, myRole, isTeacher, hasRemoteStream, authStatus]);
+  }, [sessionId, session?.id, myRole, isTeacher, hasRemoteStream, authStatus, clientId]);
 
-  // Keep remote video element ref updated whenever remote stream is active
+  // Keep remote video and audio element refs updated whenever remote stream is active
   useEffect(() => {
     if (hasRemoteStream && remoteStreamRef.current) {
       if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
         remoteVideoRef.current.srcObject = remoteStreamRef.current;
       }
+      remoteVideoRef.current?.play().catch(() => {});
+
       if (remoteAudioRef.current && remoteAudioRef.current.srcObject !== remoteStreamRef.current) {
         remoteAudioRef.current.srcObject = remoteStreamRef.current;
         remoteAudioRef.current.play().catch(() => setNeedsAudioUnlock(true));
       }
     }
   }, [hasRemoteStream]);
+
+  // Global ambient user interaction audio unblocker
+  useEffect(() => {
+    const handleUnlockAudio = () => {
+      if (remoteAudioRef.current && remoteAudioRef.current.paused) {
+        remoteAudioRef.current.play().catch(() => {});
+      }
+      if (remoteVideoRef.current && remoteVideoRef.current.paused) {
+        remoteVideoRef.current.play().catch(() => {});
+      }
+    };
+    window.addEventListener("click", handleUnlockAudio);
+    window.addEventListener("touchstart", handleUnlockAudio);
+    return () => {
+      window.removeEventListener("click", handleUnlockAudio);
+      window.removeEventListener("touchstart", handleUnlockAudio);
+    };
+  }, []);
 
   // Recording timer
   useEffect(() => {
@@ -1153,46 +1188,48 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             >
               {isTeacher ? (
                 // On Teacher Screen: Show Teacher's local camera
-                isVideoOn ? (
+                <>
                   <video
                     ref={localVideoRef}
                     autoPlay
                     playsInline
                     muted
-                    className="w-full h-full object-cover scale-x-[-1]"
+                    className={`w-full h-full object-cover scale-x-[-1] ${isVideoOn ? "block" : "hidden"}`}
                   />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900">
-                    <img
-                      src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
-                      alt="Teacher"
-                      className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/50 mb-1"
-                    />
-                    <span className="text-[10px] text-slate-400">الكاميرا متوقفة</span>
-                  </div>
-                )
+                  {!isVideoOn && (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900">
+                      <img
+                        src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
+                        alt="Teacher"
+                        className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/50 mb-1"
+                      />
+                      <span className="text-[10px] text-slate-400">الكاميرا متوقفة</span>
+                    </div>
+                  )}
+                </>
               ) : (
                 // On Student Screen: Show Teacher's LIVE Remote Stream
-                hasRemoteStream ? (
+                <>
                   <video
                     ref={remoteVideoRef}
                     autoPlay
                     playsInline
-                    className="w-full h-full object-cover"
+                    className={`w-full h-full object-cover ${hasRemoteStream ? "block" : "hidden"}`}
                   />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-center p-2">
-                    <img
-                      src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
-                      alt="Teacher"
-                      className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/50 mb-1"
-                    />
-                    <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      بانتظار بث المعلم...
-                    </span>
-                  </div>
-                )
+                  {!hasRemoteStream && (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-center p-2">
+                      <img
+                        src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
+                        alt="Teacher"
+                        className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/50 mb-1"
+                      />
+                      <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        بانتظار بث المعلم...
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="absolute bottom-1 right-1 bg-black/80 px-2 py-0.5 rounded text-[10px] font-bold text-emerald-400 flex items-center gap-1.5 backdrop-blur-sm">
@@ -1218,46 +1255,48 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             >
               {!isTeacher ? (
                 // On Student Screen: Show Student's local camera
-                isVideoOn ? (
+                <>
                   <video
                     ref={localVideoRef}
                     autoPlay
                     playsInline
                     muted
-                    className="w-full h-full object-cover scale-x-[-1]"
+                    className={`w-full h-full object-cover scale-x-[-1] ${isVideoOn ? "block" : "hidden"}`}
                   />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900">
-                    <img
-                      src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200"
-                      alt="Student"
-                      className="w-12 h-12 rounded-full object-cover ring-2 ring-gold-accent/50 mb-1"
-                    />
-                    <span className="text-[10px] text-slate-400">الكاميرا متوقفة</span>
-                  </div>
-                )
+                  {!isVideoOn && (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900">
+                      <img
+                        src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200"
+                        alt="Student"
+                        className="w-12 h-12 rounded-full object-cover ring-2 ring-gold-accent/50 mb-1"
+                      />
+                      <span className="text-[10px] text-slate-400">الكاميرا متوقفة</span>
+                    </div>
+                  )}
+                </>
               ) : (
                 // On Teacher Screen: Show Student's LIVE Remote Stream
-                hasRemoteStream ? (
+                <>
                   <video
                     ref={remoteVideoRef}
                     autoPlay
                     playsInline
-                    className="w-full h-full object-cover"
+                    className={`w-full h-full object-cover ${hasRemoteStream ? "block" : "hidden"}`}
                   />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-center p-2">
-                    <img
-                      src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200"
-                      alt="Student"
-                      className="w-12 h-12 rounded-full object-cover ring-2 ring-gold-accent/50 mb-1"
-                    />
-                    <span className="text-[10px] text-amber-300 font-bold flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                      بانتظار انضمام الطالب...
-                    </span>
-                  </div>
-                )
+                  {!hasRemoteStream && (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-center p-2">
+                      <img
+                        src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200"
+                        alt="Student"
+                        className="w-12 h-12 rounded-full object-cover ring-2 ring-gold-accent/50 mb-1"
+                      />
+                      <span className="text-[10px] text-amber-300 font-bold flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        بانتظار انضمام الطالب...
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="absolute bottom-1 right-1 bg-black/80 px-2 py-0.5 rounded text-[10px] font-bold text-white flex items-center gap-1.5 backdrop-blur-sm">

@@ -1,65 +1,103 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 
-interface SignalingQueue {
-  messages: Array<{
-    id: number;
-    senderRole: string;
-    senderName: string;
-    signalType: string;
-    data: any;
-    timestamp: number;
-  }>;
+interface SignalingMessage {
+  id: number;
+  senderRole: string;
+  senderName: string;
+  senderClientId?: string;
+  signalType: string;
+  data: any;
+  timestamp: number;
 }
 
-const queues = new Map<string, SignalingQueue>();
-let messageCounter = 0;
+interface SignalingQueue {
+  messages: SignalingMessage[];
+}
+
+const globalForSignaling = globalThis as unknown as {
+  signalingQueues?: Map<string, SignalingQueue>;
+  signalingMessageCounter?: number;
+};
+
+const queues = globalForSignaling.signalingQueues ?? new Map<string, SignalingQueue>();
+if (!globalForSignaling.signalingQueues) {
+  globalForSignaling.signalingQueues = queues;
+}
+
+async function resolveSessionKey(sessionId: string | null): Promise<string> {
+  if (!sessionId || sessionId === "auto") {
+    try {
+      const active = await prisma.liveSession.findFirst({
+        where: { status: "ACTIVE" },
+        orderBy: { startedAt: "desc" },
+      });
+      if (active) return active.id;
+    } catch {}
+    return "active-session";
+  }
+  return sessionId;
+}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const sessionId = searchParams.get("sessionId");
+  const rawSessionId = searchParams.get("sessionId");
   const role = searchParams.get("role");
+  const clientId = searchParams.get("clientId");
   const since = parseInt(searchParams.get("since") || "0", 10);
 
-  if (!sessionId) {
-    return NextResponse.json({ error: "sessionId مطلوب" }, { status: 400 });
+  const sessionId = await resolveSessionKey(rawSessionId);
+
+  let queue = queues.get(sessionId);
+  if (!queue && queues.size === 1) {
+    // If only one room queue exists, reuse it to avoid mismatch
+    queue = queues.values().next().value;
   }
 
-  const queue = queues.get(sessionId);
   if (!queue) {
-    return NextResponse.json({ messages: [], latestId: since });
+    return NextResponse.json({ messages: [], latestId: since, sessionId });
   }
 
-  // Filter messages intended for this role (sent by the OTHER role)
-  // and newer than 'since'
-  const newMessages = queue.messages.filter(
-    (m) => m.id > since && m.senderRole !== role
-  );
+  // Filter messages:
+  // 1. Must be newer than 'since'
+  // 2. Must not be from the same client
+  // 3. Must be from the opposing role if role is specified
+  const newMessages = queue.messages.filter((m) => {
+    if (m.id <= since) return false;
+    if (clientId && m.senderClientId && m.senderClientId === clientId) return false;
+    if (role && m.senderRole && m.senderRole === role) return false;
+    return true;
+  });
 
   const latestId = queue.messages.length > 0 ? queue.messages[queue.messages.length - 1].id : since;
 
-  return NextResponse.json({ messages: newMessages, latestId });
+  return NextResponse.json({ messages: newMessages, latestId, sessionId });
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { sessionId, signalType, senderRole, senderName, data } = body;
+    const { sessionId: rawSessionId, signalType, senderRole, senderName, senderClientId, data } = body;
 
-    if (!sessionId || !signalType || !senderRole) {
+    if (!signalType || !senderRole) {
       return NextResponse.json({ error: "بيانات الإشارة غير مكتملة" }, { status: 400 });
     }
+
+    const sessionId = await resolveSessionKey(rawSessionId);
 
     if (!queues.has(sessionId)) {
       queues.set(sessionId, { messages: [] });
     }
 
     const queue = queues.get(sessionId)!;
-    messageCounter++;
+    globalForSignaling.signalingMessageCounter = (globalForSignaling.signalingMessageCounter || 0) + 1;
+    const msgId = globalForSignaling.signalingMessageCounter;
 
-    const msg = {
-      id: messageCounter,
+    const msg: SignalingMessage = {
+      id: msgId,
       senderRole,
       senderName: senderName || "",
+      senderClientId: senderClientId || "",
       signalType,
       data,
       timestamp: Date.now(),
@@ -67,12 +105,12 @@ export async function POST(req: Request) {
 
     queue.messages.push(msg);
 
-    // Keep only last 100 messages to prevent memory leak
-    if (queue.messages.length > 100) {
-      queue.messages = queue.messages.slice(-100);
+    // Keep only last 150 messages to prevent memory growth
+    if (queue.messages.length > 150) {
+      queue.messages = queue.messages.slice(-150);
     }
 
-    return NextResponse.json({ success: true, messageId: messageCounter });
+    return NextResponse.json({ success: true, messageId: msgId, sessionId });
   } catch (error) {
     console.error("Signaling error:", error);
     return NextResponse.json({ error: "فشل إرسال الإشارة" }, { status: 500 });

@@ -99,8 +99,14 @@ export async function GET(req: Request) {
             a.student?.userId === effectiveUser.id
         );
 
-        if (sessionAtt?.isVerifiedByTeacher) {
-          // Student was accepted by the Sheikh for this session - can continue/re-enter seamlessly
+        const isEnrolled = session.halaqa.enrollments?.some(
+          (e: any) =>
+            (studentProfileId && e.studentId === studentProfileId) ||
+            e.student?.userId === effectiveUser.id
+        );
+
+        if (sessionAtt?.isVerifiedByTeacher || (isEnrolled && !sessionAtt?.requestedCheckIn)) {
+          // Student was verified by the Sheikh or is enrolled in this halaqa - enters directly!
           isAuthorized = true;
           authorizationStatus = "AUTHORIZED";
         } else if (sessionAtt?.requestedCheckIn) {
@@ -293,6 +299,7 @@ export async function POST(req: Request) {
     });
 
     // Auto-create initial attendance records and collect student user IDs to notify
+    // Since Teacher initiates the session, students are pre-verified to join without needing second approval!
     const studentUserIdsToNotify = new Set<string>();
     for (const enrollment of halaqa.enrollments) {
       studentUserIdsToNotify.add(enrollment.student.user.id);
@@ -301,6 +308,7 @@ export async function POST(req: Request) {
           sessionId: liveSession.id,
           studentId: enrollment.studentId,
           status: "ABSENT",
+          isVerifiedByTeacher: true, // Sheikh invited them; 1-click direct join!
         },
       }).catch(() => {});
     }
@@ -317,6 +325,7 @@ export async function POST(req: Request) {
             sessionId: liveSession.id,
             studentId: st.id,
             status: "ABSENT",
+            isVerifiedByTeacher: true, // Sheikh invited them; 1-click direct join!
           },
         }).catch(() => {});
       }
