@@ -444,7 +444,7 @@ export function ScheduleBoardWidget({
             {/* Quick Test Alert Sound */}
             <button
               onClick={() => playScheduleAlertSound()}
-              title="تجربة صوت تنبيه المواعيد"
+              title="فحص نغمة التنبيه"
               className="p-2 rounded-xl text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
             >
               <Volume2 className="w-4 h-4" />

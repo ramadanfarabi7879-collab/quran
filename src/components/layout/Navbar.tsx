@@ -224,12 +224,12 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
             </div>
           </div>
 
-          {/* Quick Demo Switcher Bar: STRICTLY RESERVED FOR ADMIN (Hidden for Students & Teachers) */}
+          {/* Admin Navigation Bar */}
           {user?.role === "ADMIN" && (
             <div className="hidden lg:flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
               <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium px-2 flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-gold-accent" />
-                تحكم المدير العام:
+                الإدارة المركزية:
               </span>
               <Link
                 href="/admin/dashboard"
@@ -242,25 +242,6 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
                 className="text-xs px-2.5 py-1 rounded-lg font-medium bg-islamic-800 text-white shadow hover:bg-islamic-700 transition"
               >
                 أدوات المعلم
-              </Link>
-              <button
-                onClick={() => switchUser("TEACHER")}
-                className="text-xs px-2.5 py-1 rounded-lg font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
-              >
-                عرض كمعلم
-              </button>
-              <button
-                onClick={() => switchUser("STUDENT", "student@quran.com")}
-                className="text-xs px-2.5 py-1 rounded-lg font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
-              >
-                عرض كطالب
-              </button>
-              <Link
-                href="/simulation"
-                className="text-xs px-2.5 py-1 rounded-lg font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 shadow flex items-center gap-1 transition"
-              >
-                <Video className="w-3.5 h-3.5" />
-                المحاكاة الحية
               </Link>
             </div>
           )}

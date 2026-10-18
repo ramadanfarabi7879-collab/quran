@@ -62,7 +62,7 @@ interface InteractiveMushafProps {
 }
 
 export function InteractiveMushaf({
-  sessionId = "demo-session",
+  sessionId = "active-session",
   isTeacher = false,
   halaqaId,
   halaqaName = "حلقة الفجر لتحفيظ القرآن",

@@ -41,9 +41,9 @@ export default function LoginPage() {
     }
   };
 
-  const handleQuickDemoLogin = async (role: string, emailDemo: string, path: string) => {
+  const handleQuickDirectLogin = async (role: string, email: string, path: string) => {
     setLoading(true);
-    await switchUser(role, emailDemo);
+    await switchUser(role, email);
     router.push(path);
   };
 
@@ -117,26 +117,26 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Quick Demo Login Buttons */}
+          {/* Direct Role Portals */}
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5 text-gold-accent" />
-              دخول سريع بحسابات التجربة:
+              الدخول المباشر للبوابات الرسمية:
             </span>
 
             <div className="grid grid-cols-1 gap-2">
               <button
                 onClick={() =>
-                  handleQuickDemoLogin("TEACHER", "teacher@quran.com", "/teacher/dashboard")
+                  handleQuickDirectLogin("TEACHER", "teacher@quran.com", "/teacher/dashboard")
                 }
                 className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 text-right transition flex items-center justify-between"
               >
                 <div>
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                    الشيخ أحمد المنشاوي (معلم ومقرئ)
+                    فضيلة الشيخ أحمد المنشاوي
                   </span>
-                  <span className="block text-[10px] text-slate-400 font-mono">
-                    teacher@quran.com / teacher
+                  <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    بوابة المعلم والمقرئ
                   </span>
                 </div>
                 <span className="text-[11px] font-bold text-emerald-600">دخول المعلم ←</span>
@@ -144,34 +144,34 @@ export default function LoginPage() {
 
               <button
                 onClick={() =>
-                  handleQuickDemoLogin("STUDENT", "student@quran.com", "/student/dashboard")
+                  handleQuickDirectLogin("STUDENT", "student@quran.com", "/student/dashboard")
                 }
                 className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 text-right transition flex items-center justify-between"
               >
                 <div>
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                    عبد الرحمن العلي (طالب)
+                    عبد الرحمن محمد العلي
                   </span>
-                  <span className="block text-[10px] text-slate-400 font-mono">
-                    student@quran.com / student
+                  <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    بوابة الطالب المسجل
                   </span>
                 </div>
                 <span className="text-[11px] font-bold text-emerald-600">دخول الطالب ←</span>
               </button>
 
               <button
-                onClick={() => handleQuickDemoLogin("ADMIN", "admin@quran.com", "/admin/dashboard")}
+                onClick={() => handleQuickDirectLogin("ADMIN", "admin@quran.com", "/admin/dashboard")}
                 className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-slate-200 dark:border-slate-700 text-right transition flex items-center justify-between"
               >
                 <div>
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                    مدير المنصة (الإدارة المركزية)
+                    الإدارة العامة للمنصة
                   </span>
-                  <span className="block text-[10px] text-slate-400 font-mono">
-                    admin@quran.com / admin
+                  <span className="block text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                    لوحة الإشراف المركزي
                   </span>
                 </div>
-                <span className="text-[11px] font-bold text-amber-600">دخول المدير ←</span>
+                <span className="text-[11px] font-bold text-amber-600">دخول الإدارة ←</span>
               </button>
             </div>
           </div>

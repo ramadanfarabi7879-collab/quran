@@ -61,7 +61,7 @@ export default function SimulationPage() {
             </div>
             <div>
               <span className="font-black text-sm text-emerald-400 block">وَرَتِّلْ - منصة القرآن</span>
-              <span className="text-[10px] text-slate-400 block">المحاكاة الحية المتزامنة (معلم ⇄ طالب)</span>
+              <span className="text-[10px] text-slate-400 block">شاشة المتابعة المزدوجة المتزامنة (معلم ⇄ طالب)</span>
             </div>
           </Link>
 

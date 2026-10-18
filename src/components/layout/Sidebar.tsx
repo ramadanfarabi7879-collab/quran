@@ -199,7 +199,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
           </div>
         )}
         <p className="text-[10px] text-center text-slate-400 dark:text-slate-500">
-          نظام ورتّل للتحفيظ عن بُعد v1.0
+          منصة ورتّل الرسمية لتحفيظ القرآن الكريم
         </p>
       </div>
     </div>
