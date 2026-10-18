@@ -346,6 +346,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     ) {
       if (!isTeacher) {
         playStudentApprovedSound();
+        setAuthStatus("AUTHORIZED");
       }
       fetchSession();
     }
@@ -359,6 +360,25 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       }
     }
   }, [lastEvent, isTeacher, sessionId]);
+
+  // Fallback active poll while student is waiting on gatekeeper screen (every 2s)
+  useEffect(() => {
+    if (isTeacher || authStatus !== "PENDING_APPROVAL") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/live/session?sessionId=${sessionId}&role=${roleParam || ""}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isAuthorized) {
+            playStudentApprovedSound();
+            setAuthStatus("AUTHORIZED");
+            setSession(data.session);
+          }
+        }
+      } catch {}
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [authStatus, isTeacher, sessionId, roleParam]);
 
   // Handle submitting join request directly from gatekeeper screen (1-click direct tap)
   const handleSendJoinRequestFromGate = async () => {

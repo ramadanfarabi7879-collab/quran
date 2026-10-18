@@ -129,7 +129,15 @@ export async function POST(req: Request) {
     // Action 2: Teacher 1-click accept join request for this session
     if (action === "ACCEPT_JOIN_SESSION") {
       let resolvedStudentId = studentId;
-      if (!resolvedStudentId && body.requestId) {
+      let resolvedSessionId = sessionId;
+
+      if (body.requestId && typeof body.requestId === "string" && body.requestId.startsWith("att-")) {
+        const parts = body.requestId.split("-");
+        if (parts.length >= 3) {
+          resolvedSessionId = resolvedSessionId || parts[1];
+          resolvedStudentId = resolvedStudentId || parts.slice(2).join("-");
+        }
+      } else if (!resolvedStudentId && body.requestId) {
         const reqItem = await prisma.joinRequest.findUnique({
           where: { id: body.requestId },
         });
@@ -140,11 +148,18 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "معرف الطالب مفقود" }, { status: 400 });
       }
 
-      // If sessionId is not provided, look for active session for halaqaId
-      let resolvedSessionId = sessionId;
+      // If sessionId is not provided, look for active session for halaqaId or find any active session
       if (!resolvedSessionId && body.halaqaId) {
         const activeSess = await prisma.liveSession.findFirst({
           where: { halaqaId: body.halaqaId, status: "ACTIVE" },
+        });
+        resolvedSessionId = activeSess?.id;
+      }
+
+      if (!resolvedSessionId) {
+        const activeSess = await prisma.liveSession.findFirst({
+          where: { status: "ACTIVE" },
+          orderBy: { startedAt: "desc" },
         });
         resolvedSessionId = activeSess?.id;
       }
@@ -215,6 +230,16 @@ export async function POST(req: Request) {
         });
       }
 
+      if (body.requestId && typeof body.requestId === "string" && !body.requestId.startsWith("att-")) {
+        await prisma.joinRequest.updateMany({
+          where: { id: body.requestId },
+          data: {
+            status: "ACCEPTED",
+            reviewedAt: new Date(),
+          },
+        }).catch(() => {});
+      }
+
       // Broadcast to student
       const approvalPayload = {
         sessionId: resolvedSessionId,
@@ -260,14 +285,22 @@ export async function POST(req: Request) {
     // Action 2.1: Teacher rejects session join request
     if (action === "REJECT_JOIN_SESSION") {
       let resolvedStudentId = studentId;
-      if (!resolvedStudentId && body.requestId) {
+      let resolvedSessionId = sessionId;
+
+      if (body.requestId && typeof body.requestId === "string" && body.requestId.startsWith("att-")) {
+        const parts = body.requestId.split("-");
+        if (parts.length >= 3) {
+          resolvedSessionId = resolvedSessionId || parts[1];
+          resolvedStudentId = resolvedStudentId || parts.slice(2).join("-");
+        }
+      } else if (!resolvedStudentId && body.requestId) {
         const reqItem = await prisma.joinRequest.findUnique({ where: { id: body.requestId } });
         resolvedStudentId = reqItem?.studentId;
       }
 
-      if (sessionId && resolvedStudentId) {
+      if (resolvedSessionId && resolvedStudentId) {
         await prisma.sessionAttendance.updateMany({
-          where: { sessionId, studentId: resolvedStudentId },
+          where: { sessionId: resolvedSessionId, studentId: resolvedStudentId },
           data: {
             isVerifiedByTeacher: false,
             requestedCheckIn: false,
@@ -277,7 +310,7 @@ export async function POST(req: Request) {
       }
 
       // Also mark JoinRequest as REJECTED so it never remains pending
-      if (body.requestId) {
+      if (body.requestId && typeof body.requestId === "string" && !body.requestId.startsWith("att-")) {
         await prisma.joinRequest.updateMany({
           where: { id: body.requestId },
           data: {
@@ -319,7 +352,7 @@ export async function POST(req: Request) {
       realtimeHub.broadcast("global", {
         type: "SESSION_JOIN_REJECTED",
         payload: {
-          sessionId,
+          sessionId: resolvedSessionId,
           studentId: resolvedStudentId,
           studentUserId: studentProfile?.user?.id,
           message: "تم الاعتذار عن قبول طلب الانضمام",
@@ -332,7 +365,15 @@ export async function POST(req: Request) {
     // Action 2.2: Teacher reschedules / comments with alternative time for session join
     if (action === "RESCHEDULE_JOIN_SESSION") {
       let resolvedStudentId = studentId;
-      if (!resolvedStudentId && body.requestId) {
+      let resolvedSessionId = sessionId;
+
+      if (body.requestId && typeof body.requestId === "string" && body.requestId.startsWith("att-")) {
+        const parts = body.requestId.split("-");
+        if (parts.length >= 3) {
+          resolvedSessionId = resolvedSessionId || parts[1];
+          resolvedStudentId = resolvedStudentId || parts.slice(2).join("-");
+        }
+      } else if (!resolvedStudentId && body.requestId) {
         const reqItem = await prisma.joinRequest.findUnique({ where: { id: body.requestId } });
         resolvedStudentId = reqItem?.studentId;
       }
@@ -340,9 +381,9 @@ export async function POST(req: Request) {
       const scheduledTime = body.scheduledTime || "الجلسة القادمة";
       const notes = body.notes || "";
 
-      if (sessionId && resolvedStudentId) {
+      if (resolvedSessionId && resolvedStudentId) {
         await prisma.sessionAttendance.updateMany({
-          where: { sessionId, studentId: resolvedStudentId },
+          where: { sessionId: resolvedSessionId, studentId: resolvedStudentId },
           data: {
             isVerifiedByTeacher: false,
             requestedCheckIn: false,
@@ -352,7 +393,7 @@ export async function POST(req: Request) {
       }
 
       // Also mark JoinRequest as resolved with scheduled time
-      if (body.requestId) {
+      if (body.requestId && typeof body.requestId === "string" && !body.requestId.startsWith("att-")) {
         await prisma.joinRequest.updateMany({
           where: { id: body.requestId },
           data: {

@@ -110,12 +110,27 @@ export async function GET(req: Request) {
       orderBy: { createdAt: "desc" },
     });
 
+    // 6. Active Live Session Join Requests (from SessionAttendance)
+    const activeSessionPendingAttendances = await prisma.sessionAttendance.findMany({
+      where: {
+        session: { status: "ACTIVE" },
+        requestedCheckIn: true,
+        isVerifiedByTeacher: false,
+      },
+      include: {
+        student: { include: { user: true } },
+        session: { include: { halaqa: true } },
+      },
+      orderBy: { checkInTime: "desc" },
+    });
+
     return NextResponse.json({
       students: enrollments,
       deletedStudents,
       joinRequests,
       pendingRegistrations,
       rejectedRegistrations,
+      activeSessionPendingAttendances,
     });
   } catch (error) {
     console.error("Get students error:", error);

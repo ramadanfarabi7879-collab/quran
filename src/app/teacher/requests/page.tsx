@@ -58,7 +58,21 @@ export default function TeacherRequestsManagementPage() {
         const d = await resS.json();
         setPendingRegistrations(d.pendingRegistrations || []);
         setRejectedRegistrations(d.rejectedRegistrations || []);
-        setJoinRequests(d.joinRequests || []);
+
+        const liveRequests = (d.activeSessionPendingAttendances || []).map((a: any) => ({
+          id: `att-${a.sessionId}-${a.studentId}`,
+          studentId: a.studentId,
+          student: a.student,
+          halaqaId: a.session?.halaqaId,
+          halaqa: a.session?.halaqa,
+          status: "PENDING",
+          createdAt: a.checkInTime || new Date().toISOString(),
+          notes: a.notes || "طلب انضمام للجلسة الحالية المباشرة",
+          isLiveSession: true,
+          sessionId: a.sessionId,
+        }));
+
+        setJoinRequests([...(d.joinRequests || []), ...liveRequests]);
       }
       if (resH.ok) {
         const d = await resH.json();
@@ -201,6 +215,7 @@ export default function TeacherRequestsManagementPage() {
           requestId: req.id,
           halaqaId: req.halaqaId,
           studentId: req.studentId,
+          sessionId: req.sessionId,
         }),
       });
 
@@ -231,6 +246,7 @@ export default function TeacherRequestsManagementPage() {
           action: "RESCHEDULE_JOIN_SESSION",
           requestId: req.id,
           studentId: req.studentId,
+          sessionId: req.sessionId,
           scheduledTime: finalTime,
           notes,
         }),
@@ -262,6 +278,7 @@ export default function TeacherRequestsManagementPage() {
           action: "REJECT_JOIN_SESSION",
           requestId: req.id,
           studentId: req.studentId,
+          sessionId: req.sessionId,
           reason,
         }),
       });

@@ -56,29 +56,16 @@ export function SheikhDecisionOverlay() {
   const [submitting, setSubmitting] = useState(false);
   const [actionDoneMsg, setActionDoneMsg] = useState<string | null>(null);
 
-  // Helper: Persist handled/dismissed requests in sessionStorage so they NEVER reappear as popups
-  const markHandled = (item?: DecisionItem | null) => {
-    if (!item) return;
-    try {
-      const raw = sessionStorage.getItem("sheikh_handled_requests") || "[]";
-      const list: string[] = JSON.parse(raw);
-      const keys = [item.id, item.studentUserId, item.studentId, item.requestId].filter(Boolean) as string[];
-      keys.forEach((k) => {
-        if (!list.includes(k)) list.push(k);
-      });
-      sessionStorage.setItem("sheikh_handled_requests", JSON.stringify(list));
-    } catch {}
+  // In-memory set of items dismissed via the close [X] button during this session
+  const dismissedIdsRef = React.useRef(new Set<string>());
+
+  const markDismissed = (key?: string | null) => {
+    if (key) dismissedIdsRef.current.add(key);
   };
 
-  const isItemHandled = (key?: string | null) => {
+  const isDismissed = (key?: string | null) => {
     if (!key) return false;
-    try {
-      const raw = sessionStorage.getItem("sheikh_handled_requests") || "[]";
-      const list: string[] = JSON.parse(raw);
-      return list.includes(key);
-    } catch {
-      return false;
-    }
+    return dismissedIdsRef.current.has(key);
   };
 
   // 1. Load existing halaqat schedules for suggestions
@@ -99,7 +86,7 @@ export function SheikhDecisionOverlay() {
     fetchHalaqat();
   }, [isTeacherOrAdmin]);
 
-  // 2. Load pending registrations & join requests on mount & periodically
+  // 2. Load pending registrations & join requests on mount & periodically (every 3.5 seconds)
   useEffect(() => {
     if (!isTeacherOrAdmin) return;
 
@@ -112,10 +99,10 @@ export function SheikhDecisionOverlay() {
 
         const pendingItems: DecisionItem[] = [];
 
-        // A. Pending New Student Registrations (isActive: false, not handled)
+        // A. Pending New Student Registrations (isActive: false)
         if (data.pendingRegistrations && Array.isArray(data.pendingRegistrations)) {
           data.pendingRegistrations.forEach((u: any) => {
-            if (isItemHandled(u.id)) return;
+            if (isDismissed(`reg-${u.id}`)) return;
             pendingItems.push({
               id: `reg-${u.id}`,
               type: "REGISTRATION",
@@ -133,7 +120,7 @@ export function SheikhDecisionOverlay() {
         // B. Pending Session/Halaqa Join Requests
         if (data.joinRequests && Array.isArray(data.joinRequests)) {
           data.joinRequests
-            .filter((r: any) => r.status === "PENDING" && !isItemHandled(r.id) && !isItemHandled(r.studentId))
+            .filter((r: any) => r.status === "PENDING" && !isDismissed(`join-${r.id}`))
             .forEach((r: any) => {
               pendingItems.push({
                 id: `join-${r.id}`,
@@ -154,16 +141,34 @@ export function SheikhDecisionOverlay() {
             });
         }
 
+        // C. Active Live Session Knocking / Join Requests
+        if (data.activeSessionPendingAttendances && Array.isArray(data.activeSessionPendingAttendances)) {
+          data.activeSessionPendingAttendances.forEach((a: any) => {
+            const attId = `att-${a.sessionId}-${a.studentId}`;
+            if (isDismissed(attId)) return;
+            pendingItems.push({
+              id: attId,
+              type: "SESSION_JOIN",
+              sessionId: a.sessionId,
+              studentId: a.studentId,
+              studentUserId: a.student?.user?.id,
+              studentName: a.student?.user?.name || "طالب العلم",
+              studentAvatar: a.student?.user?.avatar,
+              phone: a.student?.user?.phone,
+              time: a.checkInTime
+                ? new Date(a.checkInTime).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })
+                : new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+              halaqaId: a.session?.halaqaId,
+              halaqaName: a.session?.halaqa?.name || "الحلقة المباشرة المنعقدة",
+              notes: a.notes || "يرغب في الدخول للجلسة المباشرة الآن",
+            });
+          });
+        }
+
         if (isMounted && pendingItems.length > 0) {
           setQueue((prev) => {
-            const existingKeys = new Set(prev.map((i) => i.studentUserId || i.studentId || i.id));
-            const freshItems = pendingItems.filter(
-              (i) =>
-                !existingKeys.has(i.studentUserId || i.studentId || i.id) &&
-                !isItemHandled(i.studentUserId) &&
-                !isItemHandled(i.studentId) &&
-                !isItemHandled(i.id)
-            );
+            const existingKeys = new Set(prev.map((i) => i.id));
+            const freshItems = pendingItems.filter((i) => !existingKeys.has(i.id));
             return freshItems.length > 0 ? [...prev, ...freshItems] : prev;
           });
         }
@@ -171,7 +176,7 @@ export function SheikhDecisionOverlay() {
     };
 
     syncPendingRequests();
-    const timer = setInterval(syncPendingRequests, 6000);
+    const timer = setInterval(syncPendingRequests, 3500);
     return () => {
       isMounted = false;
       clearInterval(timer);
@@ -186,7 +191,7 @@ export function SheikhDecisionOverlay() {
     if (lastEvent.type === "STUDENT_REGISTRATION_SUBMITTED") {
       const p = lastEvent.payload;
       const targetUserId = p.studentUserId || p.studentId;
-      if (isItemHandled(targetUserId)) return;
+      if (isDismissed(`reg-${targetUserId}`)) return;
 
       playTeacherJoinAlertSound();
       const newItem: DecisionItem = {
@@ -209,7 +214,7 @@ export function SheikhDecisionOverlay() {
     // 2. Student requested to join live session
     if (lastEvent.type === "SESSION_JOIN_REQUESTED" || lastEvent.type === "JOIN_REQUEST_SUBMITTED") {
       const p = lastEvent.payload;
-      if (isItemHandled(p.requestId) || isItemHandled(p.studentId)) return;
+      if (p.requestId && isDismissed(p.requestId)) return;
 
       playTeacherJoinAlertSound();
       const newItem: DecisionItem = {
@@ -247,7 +252,8 @@ export function SheikhDecisionOverlay() {
 
   const dismissCurrent = () => {
     if (activeItem) {
-      markHandled(activeItem);
+      markDismissed(activeItem.id);
+      if (activeItem.requestId) markDismissed(activeItem.requestId);
     }
     setActiveItem(null);
     setShowRescheduleDrawer(false);
@@ -275,7 +281,6 @@ export function SheikhDecisionOverlay() {
   const handleAccept = async () => {
     const current = activeItem;
     if (!current) return;
-    markHandled(current);
     dismissCurrent(); // Instant vanish from screen!
 
     try {
@@ -320,7 +325,6 @@ export function SheikhDecisionOverlay() {
       return;
     }
 
-    markHandled(current);
     dismissCurrent(); // Instant vanish from screen!
 
     try {
@@ -362,7 +366,6 @@ export function SheikhDecisionOverlay() {
     if (!current) return;
     if (!confirm("هل أنت متأكد من الاعتذار عن هذا الطلب؟")) return;
 
-    markHandled(current);
     dismissCurrent(); // Instant vanish from screen!
 
     try {

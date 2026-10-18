@@ -112,12 +112,34 @@ export default function StudentDashboard() {
         lastEvent.type === "JOIN_REQUEST_APPROVED"
       ) {
         if (lastEvent.type === "SESSION_JOIN_APPROVED" || lastEvent.type === "JOIN_REQUEST_APPROVED") {
+          const targetSessionId = lastEvent.payload?.sessionId || activeSession?.id;
+          if (targetSessionId) {
+            window.location.href = `/classroom/${targetSessionId}?role=student`;
+            return;
+          }
           setSessionAuthStatus("AUTHORIZED");
         }
         fetchData();
       }
     }
-  }, [lastEvent]);
+  }, [lastEvent, activeSession]);
+
+  // Active fallback polling when student is pending approval (every 2s)
+  useEffect(() => {
+    if (sessionAuthStatus !== "PENDING_APPROVAL") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/live/session");
+        if (res.ok) {
+          const d = await res.json();
+          if (d.isAuthorized && d.session?.id) {
+            window.location.href = `/classroom/${d.session.id}?role=student`;
+          }
+        }
+      } catch {}
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [sessionAuthStatus]);
 
   const [requestingSession, setRequestingSession] = useState(false);
 
@@ -133,6 +155,7 @@ export default function StudentDashboard() {
         }),
       });
       if (res.ok) {
+        setSessionAuthStatus("PENDING_APPROVAL");
         alert("تم رفع طلب الانضمام إلى فضيلة الشيخ بنجاح، وطلبك قيد المراجعة والاعتماد الآن.");
         fetchData();
       } else {

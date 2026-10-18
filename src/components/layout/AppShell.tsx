@@ -82,11 +82,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       }
     }
 
-    // 2. Sheikh clicked "قبول ودخول" -> Alert Student screen immediately!
+    // 2. Sheikh clicked "قبول ودخول" -> Direct student immediately into the live session!
     if (lastEvent.type === "SESSION_JOIN_APPROVED" || lastEvent.type === "JOIN_REQUEST_APPROVED") {
       const p = lastEvent.payload;
       if (isStudent) {
         playStudentApprovedSound();
+        const targetSessionId = p.sessionId || liveModal?.sessionId;
+        if (targetSessionId) {
+          window.location.href = `/classroom/${targetSessionId}?role=student`;
+          return;
+        }
         setStudentApprovalToast({
           visible: true,
           message: p.message || "وافق فضيلة الشيخ على طلب انضمامك للحلقة المباركة",
@@ -153,6 +158,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             setLiveModal((prev) => {
               if (prev && prev.sessionId === sess.id) {
+                // If pending and now approved by Sheikh, redirect student immediately into classroom!
+                if (prev.approvalStatus === "PENDING" && status === "APPROVED") {
+                  window.location.href = `/classroom/${sess.id}?role=student`;
+                  return null;
+                }
                 // Update approval status dynamically without closing
                 if (prev.approvalStatus !== status) {
                   return { ...prev, approvalStatus: status };
@@ -181,8 +191,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
 
     checkActive();
-    // Relaxed fallback check every 30 seconds to keep performance light and fast
-    const interval = setInterval(checkActive, 30000);
+    // Fast 2.5s polling while student is pending approval; relaxed 30s polling otherwise
+    const pollInterval = liveModal?.approvalStatus === "PENDING" ? 2500 : 30000;
+    const interval = setInterval(checkActive, pollInterval);
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         checkActive();
@@ -193,7 +204,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [isStudent, dismissedSessionIds]);
+  }, [isStudent, dismissedSessionIds, liveModal?.approvalStatus]);
 
   return (
     <div
