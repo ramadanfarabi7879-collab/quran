@@ -227,31 +227,56 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
           {/* Universal Quick Portal Switcher */}
           <div className="hidden md:flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
             <Link
-              href="/register"
-              className="text-[11px] px-2.5 py-1 rounded-lg font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/40 transition flex items-center gap-1"
+              href="/"
+              className="text-[11px] px-2.5 py-1 rounded-lg font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
             >
-              <UserPlus className="w-3 h-3" />
-              <span>تسجيل طالب</span>
+              الرئيسية
             </Link>
-            <Link
-              href="/student/dashboard"
-              className="text-[11px] px-2.5 py-1 rounded-lg font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
-            >
-              بوابة الطالب
-            </Link>
-            <Link
-              href="/teacher/dashboard"
-              className="text-[11px] px-2.5 py-1 rounded-lg font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
-            >
-              بوابة الشيخ
-            </Link>
-            <Link
-              href="/admin/dashboard"
-              className="text-[11px] px-2.5 py-1 rounded-lg font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm transition flex items-center gap-1"
-            >
-              <Sparkles className="w-3 h-3" />
-              <span>لوحة الإدارة والصلاحيات</span>
-            </Link>
+            {!user ? (
+              <>
+                <Link
+                  href="/register"
+                  className="text-[11px] px-2.5 py-1 rounded-lg font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/40 transition flex items-center gap-1"
+                >
+                  <UserPlus className="w-3 h-3" />
+                  <span>تسجيل طالب جديد</span>
+                </Link>
+                <Link
+                  href="/login"
+                  className="text-[11px] px-2.5 py-1 rounded-lg font-bold bg-islamic-800 hover:bg-islamic-700 text-white shadow-sm transition"
+                >
+                  تسجيل الدخول
+                </Link>
+              </>
+            ) : (
+              <>
+                {user.role === "STUDENT" && (
+                  <Link
+                    href="/student/dashboard"
+                    className="text-[11px] px-2.5 py-1 rounded-lg font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100/50 dark:hover:bg-blue-950/40 transition"
+                  >
+                    لوحة الطالب
+                  </Link>
+                )}
+                {(user.role === "TEACHER" || user.role === "ADMIN") && (
+                  <Link
+                    href="/teacher/dashboard"
+                    className="text-[11px] px-2.5 py-1 rounded-lg font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/40 transition"
+                  >
+                    لوحة المعلم
+                  </Link>
+                )}
+                {user.role === "ADMIN" && (
+                  <Link
+                    href="/admin/dashboard"
+                    className="text-[11px] px-2.5 py-1 rounded-lg font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm transition flex items-center gap-1"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>لوحة الإدارة</span>
+                  </Link>
+                )}
+              </>
+            )}
           </div>
 
           {/* Right actions: Notifications, Dark mode, User profile */}

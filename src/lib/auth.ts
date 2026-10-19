@@ -1,4 +1,4 @@
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { CurrentUser, UserRole } from "@/types";
 
@@ -9,62 +9,18 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     const cookieStore = cookies();
     const sessionCookie = cookieStore.get(AUTH_COOKIE_NAME);
 
-    let userId = sessionCookie?.value;
-    let user = null;
+    const userId = sessionCookie?.value;
+    if (!userId) return null;
 
-    if (userId) {
-      user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: {
-          teacherProfile: true,
-          studentProfile: true,
-        },
-      });
-    }
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        teacherProfile: true,
+        studentProfile: true,
+      },
+    });
 
-    // Determine target role hint from request headers
-    let roleHint: "STUDENT" | "TEACHER" | "ADMIN" | null = null;
-    try {
-      const reqHeaders = headers();
-      const referer = reqHeaders.get("referer") || "";
-      const nextUrl = reqHeaders.get("x-url") || reqHeaders.get("next-url") || "";
-      if (referer.includes("/student") || nextUrl.includes("/student")) {
-        roleHint = "STUDENT";
-      } else if (referer.includes("/admin") || nextUrl.includes("/admin")) {
-        roleHint = "ADMIN";
-      } else if (referer.includes("/teacher") || nextUrl.includes("/teacher")) {
-        roleHint = "TEACHER";
-      }
-    } catch {
-      // Not in request scope
-    }
-
-    // If no cookie set or invalid user, fallback based on roleHint
-    if (!user) {
-      user = await prisma.user.findFirst({
-        where: { role: roleHint || "TEACHER" },
-        include: {
-          teacherProfile: true,
-          studentProfile: true,
-        },
-      });
-    }
-
-    // If accessing route with explicit roleHint, match the corresponding user
-    if (roleHint && user && user.role !== roleHint) {
-      const matchedUser = await prisma.user.findFirst({
-        where: { role: roleHint },
-        include: {
-          teacherProfile: true,
-          studentProfile: true,
-        },
-      });
-      if (matchedUser) {
-        user = matchedUser;
-      }
-    }
-
-    if (!user) return null;
+    if (!user || !user.isActive) return null;
 
     return {
       id: user.id,

@@ -52,15 +52,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isTeacher = user?.role === "TEACHER" || pathname.startsWith("/teacher");
 
   useEffect(() => {
-    if (loading || !user) return;
-    if (pathname.startsWith("/student") && user.role !== "STUDENT") {
-      switchUser("STUDENT", "student@quran.com", false);
-    } else if (pathname.startsWith("/admin") && user.role !== "ADMIN") {
-      switchUser("ADMIN", undefined, false);
-    } else if (pathname.startsWith("/teacher") && user.role !== "TEACHER" && user.role !== "ADMIN") {
-      switchUser("TEACHER", undefined, false);
+    if (loading) return;
+    if (!user) {
+      window.location.href = `/login?redirect=${encodeURIComponent(pathname)}`;
+      return;
     }
-  }, [pathname, user?.role, loading]);
+
+    if (pathname.startsWith("/admin") && user.role !== "ADMIN") {
+      window.location.href = user.role === "TEACHER" ? "/teacher/dashboard" : "/student/dashboard";
+    } else if (pathname.startsWith("/teacher") && user.role !== "TEACHER" && user.role !== "ADMIN") {
+      window.location.href = "/student/dashboard";
+    }
+  }, [pathname, user, loading]);
 
   // Realtime notification listener
   useEffect(() => {

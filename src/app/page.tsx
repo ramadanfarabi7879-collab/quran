@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/Navbar";
+import { useAuth } from "@/components/providers/AppProviders";
 import {
   BookOpen,
   UserPlus,
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 
 export default function UnifiedGatewayPage() {
+  const { user } = useAuth();
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col text-right" dir="rtl">
       <Navbar />
@@ -129,18 +131,20 @@ export default function UnifiedGatewayPage() {
 
             <div className="pt-6 space-y-2">
               <Link
-                href="/student/dashboard"
+                href={user?.role === "STUDENT" ? "/student/dashboard" : "/login?redirect=/student/dashboard"}
                 className="w-full py-3 px-4 rounded-2xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black text-xs shadow-md flex items-center justify-center gap-2 transition-all"
               >
-                <span>دخول لوحة الطالب المباشرة</span>
+                <span>{user?.role === "STUDENT" ? "المتابعة إلى لوحة الطالب" : "تسجيل دخول الطالب"}</span>
                 <ChevronLeft className="w-4 h-4" />
               </Link>
-              <Link
-                href="/login"
-                className="w-full py-2.5 px-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 transition"
-              >
-                <span>تسجيل الدخول بالحساب</span>
-              </Link>
+              {!user && (
+                <Link
+                  href="/register"
+                  className="w-full py-2.5 px-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 transition"
+                >
+                  <span>تقديم طلب تسجيل طالب جديد</span>
+                </Link>
+              )}
             </div>
           </div>
 
@@ -179,14 +183,14 @@ export default function UnifiedGatewayPage() {
 
             <div className="pt-6 space-y-2">
               <Link
-                href="/teacher/dashboard"
+                href={user?.role === "TEACHER" || user?.role === "ADMIN" ? "/teacher/dashboard" : "/login?redirect=/teacher/dashboard"}
                 className="w-full py-3 px-4 rounded-2xl bg-islamic-800 hover:bg-islamic-700 active:scale-95 text-white font-black text-xs shadow-lg flex items-center justify-center gap-2 transition-all border border-gold-accent/30"
               >
-                <span>دخول لوحة تحكم الشيخ</span>
+                <span>{user?.role === "TEACHER" || user?.role === "ADMIN" ? "المتابعة إلى لوحة الشيخ" : "تسجيل دخول الشيخ والمعلم"}</span>
                 <ChevronLeft className="w-4 h-4" />
               </Link>
               <Link
-                href="/teacher/requests"
+                href={user?.role === "TEACHER" || user?.role === "ADMIN" ? "/teacher/requests" : "/login?redirect=/teacher/requests"}
                 className="w-full py-2.5 px-3 rounded-2xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-900 dark:text-amber-300 border border-amber-400/40 font-black text-xs flex items-center justify-center gap-1.5 transition"
               >
                 <span>مراجعة طلبات الطلاب المعلقة</span>
@@ -229,14 +233,14 @@ export default function UnifiedGatewayPage() {
 
             <div className="pt-6 space-y-2">
               <Link
-                href="/admin/dashboard"
+                href={user?.role === "ADMIN" ? "/admin/dashboard" : "/login?redirect=/admin/dashboard"}
                 className="w-full py-3 px-4 rounded-2xl bg-purple-700 hover:bg-purple-600 active:scale-95 text-white font-black text-xs shadow-md flex items-center justify-center gap-2 transition-all"
               >
-                <span>دخول لوحة الإدارة والصلاحيات</span>
+                <span>{user?.role === "ADMIN" ? "المتابعة إلى لوحة الإدارة" : "تسجيل دخول الإدارة العامة"}</span>
                 <ChevronLeft className="w-4 h-4" />
               </Link>
               <Link
-                href="/admin/dashboard?tab=USERS"
+                href={user?.role === "ADMIN" ? "/admin/dashboard?tab=USERS" : "/login?redirect=/admin/dashboard?tab=USERS"}
                 className="w-full py-2.5 px-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 transition"
               >
                 <span>إدارة المستخدمين والصلاحيات</span>
