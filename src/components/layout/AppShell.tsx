@@ -54,13 +54,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (loading || !user) return;
     if (pathname.startsWith("/student") && user.role !== "STUDENT") {
-      switchUser("STUDENT", "student@quran.com");
+      switchUser("STUDENT", "student@quran.com", false);
     } else if (pathname.startsWith("/admin") && user.role !== "ADMIN") {
-      switchUser("ADMIN");
-    } else if (pathname.startsWith("/teacher") && user.role !== "TEACHER") {
-      switchUser("TEACHER");
+      switchUser("ADMIN", undefined, false);
+    } else if (pathname.startsWith("/teacher") && user.role !== "TEACHER" && user.role !== "ADMIN") {
+      switchUser("TEACHER", undefined, false);
     }
-  }, [pathname, user, loading]);
+  }, [pathname, user?.role, loading]);
 
   // Realtime notification listener
   useEffect(() => {

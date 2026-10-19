@@ -64,9 +64,17 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   const fetchUser = async () => {
     try {
-      const isStudent = typeof window !== "undefined" && window.location.pathname.startsWith("/student");
-      const isAdmin = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
-      const roleParam = isStudent ? "?role=STUDENT" : isAdmin ? "?role=ADMIN" : "";
+      const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+      const isStudent = pathname.startsWith("/student");
+      const isAdmin = pathname.startsWith("/admin");
+      const isTeacher = pathname.startsWith("/teacher");
+      const roleParam = isStudent
+        ? "?role=STUDENT"
+        : isAdmin
+        ? "?role=ADMIN"
+        : isTeacher
+        ? "?role=TEACHER"
+        : "";
 
       const res = await fetch(`/api/auth/me${roleParam}`);
       if (res.ok) {
@@ -86,7 +94,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     fetchUser();
   }, []);
 
-  const switchUser = async (role?: string, userId?: string, redirect = true) => {
+  const switchUser = async (role?: string, userId?: string, redirect = false) => {
     setLoading(true);
     try {
       const res = await fetch("/api/auth/switch-user", {
