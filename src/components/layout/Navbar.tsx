@@ -224,27 +224,35 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
             </div>
           </div>
 
-          {/* Admin Navigation Bar */}
-          {user?.role === "ADMIN" && (
-            <div className="hidden lg:flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium px-2 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-gold-accent" />
-                الإدارة المركزية:
-              </span>
-              <Link
-                href="/admin/dashboard"
-                className="text-xs px-2.5 py-1 rounded-lg font-bold bg-amber-600 text-white shadow hover:bg-amber-500 transition"
-              >
-                لوحة الإدارة
-              </Link>
-              <Link
-                href="/teacher/dashboard"
-                className="text-xs px-2.5 py-1 rounded-lg font-medium bg-islamic-800 text-white shadow hover:bg-islamic-700 transition"
-              >
-                أدوات المعلم
-              </Link>
-            </div>
-          )}
+          {/* Universal Quick Portal Switcher */}
+          <div className="hidden md:flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+            <Link
+              href="/register"
+              className="text-[11px] px-2.5 py-1 rounded-lg font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/40 transition flex items-center gap-1"
+            >
+              <UserPlus className="w-3 h-3" />
+              <span>تسجيل طالب</span>
+            </Link>
+            <Link
+              href="/student/dashboard"
+              className="text-[11px] px-2.5 py-1 rounded-lg font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
+            >
+              بوابة الطالب
+            </Link>
+            <Link
+              href="/teacher/dashboard"
+              className="text-[11px] px-2.5 py-1 rounded-lg font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
+            >
+              بوابة الشيخ
+            </Link>
+            <Link
+              href="/admin/dashboard"
+              className="text-[11px] px-2.5 py-1 rounded-lg font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm transition flex items-center gap-1"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>لوحة الإدارة والصلاحيات</span>
+            </Link>
+          </div>
 
           {/* Right actions: Notifications, Dark mode, User profile */}
           <div className="flex items-center gap-2 sm:gap-3">

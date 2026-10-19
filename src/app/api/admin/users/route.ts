@@ -85,7 +85,7 @@ export async function GET() {
             name: "مدير المنصة العام",
             password: "admin",
             role: "ADMIN",
-            avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+            avatar: null,
             phone: "+966500000001",
             isActive: true,
           },
@@ -168,7 +168,7 @@ export async function POST(req: Request) {
             name: "مدير المنصة العام",
             password: "admin",
             role: "ADMIN",
-            avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+            avatar: null,
             phone: "+966500000001",
             isActive: true,
           },
@@ -410,13 +410,7 @@ export async function POST(req: Request) {
           password,
           role,
           phone: phone || null,
-          avatar:
-            avatar ||
-            (role === "TEACHER"
-              ? "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
-              : role === "ADMIN"
-              ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200"
-              : "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200"),
+          avatar: avatar || null,
           isActive: true,
           ...(role === "TEACHER"
             ? {

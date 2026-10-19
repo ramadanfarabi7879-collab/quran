@@ -3,6 +3,21 @@ import { prisma } from "@/lib/prisma";
 import { AUTH_COOKIE_NAME } from "@/lib/auth";
 import { realtimeHub } from "@/lib/realtime";
 
+function normalizeDigits(str: string): string {
+  if (!str) return str;
+  return str
+    .replace(/[٠۰]/g, "0")
+    .replace(/[١۱]/g, "1")
+    .replace(/[٢۲]/g, "2")
+    .replace(/[٣۳]/g, "3")
+    .replace(/[٤۴]/g, "4")
+    .replace(/[٥۵]/g, "5")
+    .replace(/[٦۶]/g, "6")
+    .replace(/[٧۷]/g, "7")
+    .replace(/[٨۸]/g, "8")
+    .replace(/[٩۹]/g, "9");
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -21,9 +36,10 @@ export async function POST(req: Request) {
     } = body;
 
     const trimmedName = (name || "").trim();
-    const trimmedPhone = (phone || "").trim();
+    const trimmedPhone = normalizeDigits((phone || "").trim());
     const trimmedPassword = (password || "").trim();
-    const trimmedEmail = (email || "").trim();
+    const trimmedEmail = (email || "").trim().toLowerCase();
+    const trimmedGuardianPhone = guardianPhone ? normalizeDigits((guardianPhone || "").trim()) : null;
 
     if (!trimmedName || !trimmedPhone || !trimmedPassword) {
       return NextResponse.json(
@@ -32,10 +48,21 @@ export async function POST(req: Request) {
       );
     }
 
+    const cleanDigits = trimmedPhone.replace(/\D/g, "");
     // Auto-generate unique placeholder email if not provided by student
     const finalEmail =
       trimmedEmail ||
-      `stu_${trimmedPhone.replace(/\D/g, "") || Date.now()}@quran.local`;
+      `stu_${cleanDigits || Date.now()}@quran.local`;
+
+    // Parse age safely
+    let parsedAgeNumber: number | null = null;
+    if (age !== undefined && age !== null && String(age).trim() !== "") {
+      const normalizedAgeStr = normalizeDigits(String(age).trim());
+      const val = parseInt(normalizedAgeStr, 10);
+      if (!isNaN(val) && val > 0 && val < 120) {
+        parsedAgeNumber = val;
+      }
+    }
 
     // Check if phone or email already registered
     const existing = await prisma.user.findFirst({
@@ -43,8 +70,12 @@ export async function POST(req: Request) {
         OR: [
           ...(trimmedEmail ? [{ email: trimmedEmail }] : []),
           { phone: trimmedPhone },
+          ...(cleanDigits ? [{ phone: { contains: cleanDigits } }] : []),
           { email: finalEmail },
         ],
+      },
+      include: {
+        studentProfile: true,
       },
     });
 
@@ -55,8 +86,15 @@ export async function POST(req: Request) {
             error:
               "لديك طلب تسجيل مرسل بالفعل وهو قيد المراجعة والاعتماد لدى فضيلة الشيخ. سيتم التواصل معك قريباً.",
             requiresApproval: true,
+            isExistingPending: true,
+            user: {
+              id: existing.id,
+              name: existing.name,
+              phone: existing.phone,
+              role: existing.role,
+            },
           },
-          { status: 400 }
+          { status: 200 }
         );
       }
       return NextResponse.json(
@@ -90,8 +128,8 @@ export async function POST(req: Request) {
                 create: {
                   studentNumber: `STU-${Math.floor(1000 + Math.random() * 9000)}`,
                   guardianName: guardianName?.trim() || null,
-                  guardianPhone: guardianPhone?.trim() || null,
-                  age: age ? parseInt(String(age), 10) : null,
+                  guardianPhone: trimmedGuardianPhone,
+                  age: parsedAgeNumber,
                   currentLevel: currentLevel || "مبتدئ / تأسيس",
                   preferredTrack: preferredTrack || "GROUP",
                   registrationNotes: registrationNotes?.trim() || null,

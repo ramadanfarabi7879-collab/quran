@@ -59,6 +59,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
     { name: "سجل الحفظ والتقييم", href: "/teacher/evaluations", icon: Award },
     { name: "المكتبة الرقمية", href: "/teacher/library", icon: Library },
     { name: "تسجيلات الحلقات", href: "/teacher/recordings", icon: Video },
+    { name: "لوحة الإدارة والصلاحيات", href: "/admin/dashboard", icon: ShieldAlert },
     { name: "التقارير والإحصائيات", href: "/teacher/reports", icon: BarChart3 },
     { name: "الطلاب المحذوفين", href: "/teacher/trash", icon: Trash2 },
     { name: "إعدادات المعلم", href: "/teacher/settings", icon: Settings },
@@ -130,6 +131,43 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
         >
           <X className="w-5 h-5" />
         </button>
+      </div>
+
+      {/* Quick Cross-Portal Switcher */}
+      <div className="px-3 pt-2 pb-1 grid grid-cols-3 gap-1">
+        <Link
+          href="/student/dashboard"
+          className={`py-1.5 text-center text-[10px] font-bold rounded-xl border transition ${
+            role === "STUDENT"
+              ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+              : "bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+          }`}
+          title="الانتقال لبوابة الطالب"
+        >
+          بوابة الطالب
+        </Link>
+        <Link
+          href="/teacher/dashboard"
+          className={`py-1.5 text-center text-[10px] font-bold rounded-xl border transition ${
+            role === "TEACHER"
+              ? "bg-islamic-800 text-white border-islamic-800 shadow-sm"
+              : "bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+          }`}
+          title="الانتقال لبوابة المعلم"
+        >
+          بوابة الشيخ
+        </Link>
+        <Link
+          href="/admin/dashboard"
+          className={`py-1.5 text-center text-[10px] font-bold rounded-xl border transition ${
+            role === "ADMIN"
+              ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+              : "bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+          }`}
+          title="الانتقال للوحة الإدارة والصلاحيات"
+        >
+          الإدارة
+        </Link>
       </div>
 
       {/* Nav List */}

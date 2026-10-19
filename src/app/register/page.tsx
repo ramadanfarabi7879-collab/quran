@@ -49,7 +49,7 @@ export default function RegisterStudentPage() {
           phone,
           email: email.trim() || undefined,
           password,
-          age: age ? parseInt(age, 10) : undefined,
+          age: age ? String(age) : undefined,
           currentLevel,
           preferredTrack,
           guardianName,
@@ -59,12 +59,12 @@ export default function RegisterStudentPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) {
+      if (!res.ok && !data.requiresApproval) {
         setError(data.error || "فشل إرسال طلب التسجيل");
       } else {
         setSubmittedData({
-          name,
-          phone,
+          name: data.user?.name || name,
+          phone: data.user?.phone || phone,
           email: email.trim() || "غير مدخل (اختياري)",
           age: age ? `${age} سنة` : "غير محدد",
           currentLevel,
@@ -75,6 +75,7 @@ export default function RegisterStudentPage() {
               ? "مسار التأسيس والقاعدة النورانية"
               : "حلقة جماعية",
           notes: registrationNotes,
+          isExisting: Boolean(data.isExistingPending),
         });
       }
     } catch {
@@ -108,10 +109,14 @@ export default function RegisterStudentPage() {
             <div className="space-y-2">
               <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-black text-xs">
                 <Clock className="w-3.5 h-3.5 animate-spin" />
-                طلبك الآن قيد المعالجة والاعتماد لدى فضيلة الشيخ
+                {submittedData.isExisting
+                  ? "طلبك مسجل مسبقاً وبانتظار اعتماد فضيلة الشيخ"
+                  : "طلبك الآن قيد المعالجة والاعتماد لدى فضيلة الشيخ"}
               </span>
               <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100">
-                تم إرسال طلب تسجيلك بنجاح!
+                {submittedData.isExisting
+                  ? "طلبك محفوظ وقيد المراجعة!"
+                  : "تم إرسال طلب تسجيلك بنجاح!"}
               </h2>
               <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                 مرحباً بك يا <strong className="text-emerald-600 font-black">{submittedData.name}</strong>.
