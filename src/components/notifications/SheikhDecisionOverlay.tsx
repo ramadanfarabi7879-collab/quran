@@ -186,7 +186,7 @@ export function SheikhDecisionOverlay() {
     };
 
     syncPendingRequests();
-    const timer = setInterval(syncPendingRequests, 3500);
+    const timer = setInterval(syncPendingRequests, 1200);
     return () => {
       isMounted = false;
       clearInterval(timer);

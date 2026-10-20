@@ -57,7 +57,7 @@ export function StudentDecisionOverlay() {
     };
 
     fetchNotifications();
-    const timer = setInterval(fetchNotifications, 4000);
+    const timer = setInterval(fetchNotifications, 1200);
     return () => {
       isMounted = false;
       clearInterval(timer);
