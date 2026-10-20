@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
+// Key prefix for signaling data stored in PlatformSetting
+const SIG_KEY_PREFIX = "sig:";
+const MAX_MESSAGES = 100;
+
 interface SignalingMessage {
   id: number;
   senderRole: string;
@@ -9,20 +15,6 @@ interface SignalingMessage {
   signalType: string;
   data: any;
   timestamp: number;
-}
-
-interface SignalingQueue {
-  messages: SignalingMessage[];
-}
-
-const globalForSignaling = globalThis as unknown as {
-  signalingQueues?: Map<string, SignalingQueue>;
-  signalingMessageCounter?: number;
-};
-
-const queues = globalForSignaling.signalingQueues ?? new Map<string, SignalingQueue>();
-if (!globalForSignaling.signalingQueues) {
-  globalForSignaling.signalingQueues = queues;
 }
 
 async function resolveSessionKey(sessionId: string | null): Promise<string> {
@@ -39,6 +31,28 @@ async function resolveSessionKey(sessionId: string | null): Promise<string> {
   return sessionId;
 }
 
+async function getQueue(sessionKey: string): Promise<SignalingMessage[]> {
+  try {
+    const rec = await prisma.platformSetting.findUnique({
+      where: { key: SIG_KEY_PREFIX + sessionKey },
+    });
+    if (rec?.value) {
+      return JSON.parse(rec.value) as SignalingMessage[];
+    }
+  } catch {}
+  return [];
+}
+
+async function saveQueue(sessionKey: string, messages: SignalingMessage[]): Promise<void> {
+  // Keep only last MAX_MESSAGES
+  const trimmed = messages.slice(-MAX_MESSAGES);
+  await prisma.platformSetting.upsert({
+    where: { key: SIG_KEY_PREFIX + sessionKey },
+    create: { key: SIG_KEY_PREFIX + sessionKey, value: JSON.stringify(trimmed) },
+    update: { value: JSON.stringify(trimmed) },
+  });
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const rawSessionId = searchParams.get("sessionId");
@@ -47,29 +61,16 @@ export async function GET(req: Request) {
   const since = parseInt(searchParams.get("since") || "0", 10);
 
   const sessionId = await resolveSessionKey(rawSessionId);
+  const messages = await getQueue(sessionId);
 
-  let queue = queues.get(sessionId);
-  if (!queue && queues.size === 1) {
-    // If only one room queue exists, reuse it to avoid mismatch
-    queue = queues.values().next().value;
-  }
-
-  if (!queue) {
-    return NextResponse.json({ messages: [], latestId: since, sessionId });
-  }
-
-  // Filter messages:
-  // 1. Must be newer than 'since'
-  // 2. Must not be from the same client
-  // 3. Must be from the opposing role if role is specified
-  const newMessages = queue.messages.filter((m) => {
+  const newMessages = messages.filter((m) => {
     if (m.id <= since) return false;
     if (clientId && m.senderClientId && m.senderClientId === clientId) return false;
     if (role && m.senderRole && m.senderRole === role) return false;
     return true;
   });
 
-  const latestId = queue.messages.length > 0 ? queue.messages[queue.messages.length - 1].id : since;
+  const latestId = messages.length > 0 ? messages[messages.length - 1].id : since;
 
   return NextResponse.json({ messages: newMessages, latestId, sessionId });
 }
@@ -84,14 +85,10 @@ export async function POST(req: Request) {
     }
 
     const sessionId = await resolveSessionKey(rawSessionId);
+    const messages = await getQueue(sessionId);
 
-    if (!queues.has(sessionId)) {
-      queues.set(sessionId, { messages: [] });
-    }
-
-    const queue = queues.get(sessionId)!;
-    globalForSignaling.signalingMessageCounter = (globalForSignaling.signalingMessageCounter || 0) + 1;
-    const msgId = globalForSignaling.signalingMessageCounter;
+    const lastId = messages.length > 0 ? messages[messages.length - 1].id : 0;
+    const msgId = lastId + 1;
 
     const msg: SignalingMessage = {
       id: msgId,
@@ -103,12 +100,8 @@ export async function POST(req: Request) {
       timestamp: Date.now(),
     };
 
-    queue.messages.push(msg);
-
-    // Keep only last 150 messages to prevent memory growth
-    if (queue.messages.length > 150) {
-      queue.messages = queue.messages.slice(-150);
-    }
+    messages.push(msg);
+    await saveQueue(sessionId, messages);
 
     return NextResponse.json({ success: true, messageId: msgId, sessionId });
   } catch (error) {
