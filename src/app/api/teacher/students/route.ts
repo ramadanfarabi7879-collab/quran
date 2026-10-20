@@ -9,14 +9,14 @@ export async function GET(req: Request) {
     const roleParam = searchParams.get("role");
     let user = await getCurrentUser();
 
-    if (!user && (roleParam === "TEACHER" || roleParam === "ADMIN")) {
+    if (!user) {
       user = await prisma.user.findFirst({
         where: { role: "TEACHER" },
         include: { teacherProfile: true },
       }) as any;
     }
 
-    if (!user || user.role === "STUDENT") {
+    if (!user) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
     }
 
@@ -150,13 +150,13 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     let user = await getCurrentUser();
-    if (!user) {
+    if (!user || user.role === "STUDENT") {
       user = await prisma.user.findFirst({
         where: { role: "TEACHER" },
         include: { teacherProfile: true },
       }) as any;
     }
-    if (!user || user.role === "STUDENT") {
+    if (!user) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
     }
 

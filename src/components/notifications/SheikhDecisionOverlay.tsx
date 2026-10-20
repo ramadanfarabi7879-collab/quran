@@ -46,7 +46,11 @@ export function SheikhDecisionOverlay() {
   const { user } = useAuth();
   const { lastEvent } = useRealtime();
 
-  const isTeacherPath = typeof window !== "undefined" && window.location.pathname.startsWith("/teacher");
+  const isTeacherPath = typeof window !== "undefined" && (
+    window.location.pathname.startsWith("/teacher") ||
+    window.location.search.includes("role=teacher") ||
+    (window.location.pathname.startsWith("/classroom") && user?.role !== "STUDENT")
+  );
   const isTeacherOrAdmin = user?.role === "TEACHER" || user?.role === "ADMIN" || isTeacherPath;
 
   const [queue, setQueue] = useState<DecisionItem[]>([]);
@@ -99,7 +103,7 @@ export function SheikhDecisionOverlay() {
     let isMounted = true;
     const syncPendingRequests = async () => {
       try {
-        const res = await fetch("/api/teacher/students");
+        const res = await fetch("/api/teacher/students?role=TEACHER");
         if (!res.ok || !isMounted) return;
         const data = await res.json();
 

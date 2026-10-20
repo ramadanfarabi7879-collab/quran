@@ -24,8 +24,8 @@ interface StudentNotification {
 
 export function StudentDecisionOverlay() {
   const { user } = useAuth();
-  const isStudentPath = typeof window !== "undefined" && (window.location.pathname.startsWith("/student") || window.location.pathname.startsWith("/register") || window.location.pathname === "/");
-  const isStudent = user?.role === "STUDENT" || isStudentPath;
+  const isTeacherPath = typeof window !== "undefined" && (window.location.pathname.startsWith("/teacher") || window.location.search.includes("role=teacher"));
+  const isStudent = (user?.role !== "TEACHER" && user?.role !== "ADMIN" && !isTeacherPath);
 
   const [activeNotification, setActiveNotification] = useState<StudentNotification | null>(null);
   const seenIdsRef = React.useRef<Set<string>>(new Set());
@@ -39,7 +39,8 @@ export function StudentDecisionOverlay() {
       try {
         if (typeof window === "undefined") return;
         const storedPhone = localStorage.getItem("lastStudentPhone") || "";
-        const targetId = user?.id || user?.phone || storedPhone;
+        const storedUserId = localStorage.getItem("lastStudentUserId") || "";
+        const targetId = user?.id || user?.phone || storedUserId || storedPhone;
         if (!targetId) return;
 
         if (!(window as any).Peer) {
@@ -120,7 +121,17 @@ export function StudentDecisionOverlay() {
     let isMounted = true;
     const fetchNotifications = async () => {
       try {
-        const res = await fetch("/api/notifications");
+        const storedPhone = typeof window !== "undefined" ? localStorage.getItem("lastStudentPhone") || "" : "";
+        const storedUserId = typeof window !== "undefined" ? localStorage.getItem("lastStudentUserId") || "" : "";
+        const queryParam = user?.id
+          ? `?userId=${encodeURIComponent(user.id)}`
+          : storedUserId
+          ? `?userId=${encodeURIComponent(storedUserId)}`
+          : storedPhone
+          ? `?phone=${encodeURIComponent(storedPhone)}`
+          : "";
+
+        const res = await fetch(`/api/notifications${queryParam}`);
         if (!res.ok || !isMounted) return;
         const data = await res.json();
         const unread = (data.notifications || []).filter(
@@ -147,7 +158,7 @@ export function StudentDecisionOverlay() {
       isMounted = false;
       clearInterval(timer);
     };
-  }, [isStudent, activeNotification]);
+  }, [isStudent, activeNotification, user]);
 
   const handleDismiss = async () => {
     if (!activeNotification) return;
@@ -155,7 +166,17 @@ export function StudentDecisionOverlay() {
     setActiveNotification(null);
 
     try {
-      await fetch("/api/notifications", {
+      const storedPhone = typeof window !== "undefined" ? localStorage.getItem("lastStudentPhone") || "" : "";
+      const storedUserId = typeof window !== "undefined" ? localStorage.getItem("lastStudentUserId") || "" : "";
+      const queryParam = user?.id
+        ? `?userId=${encodeURIComponent(user.id)}`
+        : storedUserId
+        ? `?userId=${encodeURIComponent(storedUserId)}`
+        : storedPhone
+        ? `?phone=${encodeURIComponent(storedPhone)}`
+        : "";
+
+      await fetch(`/api/notifications${queryParam}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notificationId: id }),

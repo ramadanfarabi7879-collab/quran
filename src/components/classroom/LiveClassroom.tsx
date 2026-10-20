@@ -690,7 +690,6 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
   // Setup local camera & microphone stream with intelligent fallback
   useEffect(() => {
-    if (!isTeacher && authStatus !== "AUTHORIZED") return;
     let active = true;
 
     const initMedia = async () => {
@@ -769,11 +768,30 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         peerConnectionRef.current.close();
       }
     };
-  }, [sessionId, myRole, authStatus, isTeacher]);
+  }, [sessionId, myRole, isTeacher]);
+
+  // Resilient Local Video Stream Binder
+  useEffect(() => {
+    if (localStreamRef.current && localVideoRef.current && localVideoRef.current.srcObject !== localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.play().catch(() => {});
+    }
+  });
+
+  // Resilient Remote Video & Audio Stream Binder
+  useEffect(() => {
+    if (remoteStreamRef.current && remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      remoteVideoRef.current.play().catch(() => {});
+    }
+    if (remoteStreamRef.current && remoteAudioRef.current && remoteAudioRef.current.srcObject !== remoteStreamRef.current) {
+      remoteAudioRef.current.srcObject = remoteStreamRef.current;
+      remoteAudioRef.current.play().catch(() => {});
+    }
+  });
 
   // PeerJS Global Cloud Realtime Media & Signaling Engine (Zero Serverless Dependency)
   useEffect(() => {
-    if (!isTeacher && authStatus !== "AUTHORIZED") return;
     let isDisposed = false;
 
     const setupPeerCloud = async () => {
@@ -910,7 +928,6 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
   // Robust HTTP Signaling Polling Loop (Every 1 second)
   useEffect(() => {
-    if (!isTeacher && authStatus !== "AUTHORIZED") return;
     let active = true;
 
     const pollSignals = async () => {
@@ -1198,137 +1215,6 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     );
   }
 
-  // Gatekeeper Barrier: Student access is strictly conditioned upon Sheikh's acceptance
-  if (!isTeacher && authStatus !== "AUTHORIZED") {
-    return (
-      <div className="min-h-[75vh] flex items-center justify-center p-4">
-        <div className="bg-slate-900/95 backdrop-blur-xl border-2 border-amber-500/40 rounded-3xl p-6 sm:p-10 max-w-xl w-full shadow-2xl text-center space-y-6 relative overflow-hidden text-white">
-          {/* Decorative aura */}
-          <div className="absolute -top-24 -left-24 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
-          {/* Golden Shield & Lock Icon */}
-          <div className="relative mx-auto w-20 h-20 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-3xl bg-gradient-to-tr from-amber-500/20 to-gold-accent/30 animate-pulse border border-amber-400/40" />
-            <Lock className="w-9 h-9 text-amber-400 relative z-10" />
-          </div>
-
-          {/* Condition Header */}
-          <div className="space-y-2">
-            <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-400/30">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              الدخول مشروط بموافقة وقبول الشيخ
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-black text-white">
-              {halaqaInfo.name}
-            </h2>
-            <p className="text-xs sm:text-sm text-amber-200/80 font-medium">
-              بإشراف فضيلة {halaqaInfo.teacherName}
-            </p>
-          </div>
-
-          {/* Status-specific body */}
-          {authStatus === "PENDING_APPROVAL" ? (
-            <div className="bg-amber-950/40 border border-amber-500/40 rounded-3xl p-6 text-center space-y-4">
-              <div className="flex items-center justify-center gap-2 text-amber-300 font-black text-sm">
-                <Clock className="w-5 h-5 shrink-0 animate-spin text-amber-400" />
-                <span>طلبك قيد موافقة واعتماد فضيلة الشيخ ⏳</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
-                تم إشعار الشيخ بطلبك الآن. سيتم فتح قاعة الحلقة تلقائياً فور موافقة الشيخ دون الحاجة لإعادة تحميل الصفحة.
-              </p>
-              {requestSuccessMsg && (
-                <div className="p-2.5 bg-emerald-900/40 border border-emerald-500/40 text-emerald-300 text-xs rounded-xl flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                  <span>{requestSuccessMsg}</span>
-                </div>
-              )}
-              <div className="pt-2 flex flex-col sm:flex-row justify-center gap-2">
-                <button
-                  onClick={fetchSession}
-                  className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-3 rounded-xl transition"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  تحديث الحالة الآن
-                </button>
-                <Link
-                  href="/student/dashboard"
-                  className="px-5 py-3 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-center"
-                >
-                  العودة للرئيسية
-                </Link>
-              </div>
-            </div>
-          ) : authStatus === "REJECTED" ? (
-            <div className="bg-red-950/40 border border-red-500/40 rounded-3xl p-6 text-center space-y-3">
-              <div className="flex items-center justify-center gap-2 text-red-400 font-bold text-sm">
-                <AlertCircle className="w-5 h-5 shrink-0" />
-                <span>اعتذر فضيلة الشيخ عن قبول الانضمام</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
-                نعتذر إليك، لا يمكن الانضمام لهذه الحلقة في الوقت الراهن لاكتمال النصاب المحدد.
-              </p>
-              <div className="pt-2 flex justify-center">
-                <Link
-                  href="/student/my-halaqat"
-                  className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl border border-slate-700"
-                >
-                  استعراض الحلقات المتاحة
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-slate-800/80 border border-slate-700 rounded-3xl p-6 text-center space-y-5">
-              <div>
-                <h4 className="text-sm font-bold text-slate-200 mb-1">
-                  طلب انضمام إلى الحلقة المباشرة
-                </h4>
-                <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
-                  هذه الحلقة مخصصة للطلاب المعتمدين من الشيخ. اضغط أدناه لرفع إشعار فوري لفضيلة الشيخ لقبولك.
-                </p>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-2.5">
-                <button
-                  onClick={handleSendJoinRequestFromGate}
-                  disabled={submittingRequest}
-                  className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-black text-sm py-3.5 rounded-2xl shadow-xl transition-transform hover:scale-102 active:scale-98 disabled:opacity-50"
-                >
-                  <UserPlus className="w-5 h-5" />
-                  <span>{submittingRequest ? "جارٍ إرسال الطلب للشيخ..." : "طلب انضمام"}</span>
-                </button>
-                <Link
-                  href="/student/dashboard"
-                  className="px-5 py-3.5 rounded-2xl text-xs font-bold bg-slate-700/60 hover:bg-slate-700 text-slate-300 transition text-center"
-                >
-                  العودة للرئيسية
-                </Link>
-              </div>
-            </div>
-          )}
-
-            {/* Quick entry if Teacher visited without cookie or user is pair-testing */}
-            <div className="pt-3 border-t border-slate-800/80">
-              <button
-                onClick={() => {
-                  setActiveRoleOverride("teacher");
-                  setAuthStatus("AUTHORIZED");
-                }}
-                className="text-xs text-amber-300 hover:text-amber-200 underline font-bold transition flex items-center justify-center gap-1.5 mx-auto"
-              >
-                <span>أنت فضيلة الشيخ / المعلم؟ اضغط هنا للدخول كمعلم وبدء البث فوراً 👨‍🏫</span>
-              </button>
-            </div>
-
-            <div className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5 pt-1">
-              <Lock className="w-3 h-3 text-amber-500/70" />
-              <span>نظام الاعتماد القرآني المعتمد لمنصة ورتّل</span>
-            </div>
-        </div>
-      </div>
-    );
-  }
-
   const studentsList = session?.halaqa?.enrollments || [];
 
   return (
@@ -1384,6 +1270,39 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             <Volume2 className="w-4 h-4 text-amber-300" />
             انقر هنا لتفعيل صوت الطرف الآخر المباشر
           </button>
+        </div>
+      )}
+
+      {/* Non-blocking Status Ribbon for Student pending sheikh approval */}
+      {!isTeacher && authStatus !== "AUTHORIZED" && (
+        <div className="bg-amber-950/90 border-b border-amber-500/50 px-4 py-2 text-amber-300 text-xs font-bold flex flex-wrap items-center justify-between gap-2 z-40 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+            <span>
+              {authStatus === "PENDING_APPROVAL"
+                ? "طلب انضمامك قيد موافقة واعتماد فضيلة الشيخ ⏳ الكاميرا والمايك قيد التشغيل المباشر"
+                : authStatus === "REJECTED"
+                ? "اعتذر الشيخ عن قبول الانضمام لاكتمال النصاب المحدد"
+                : "الحلقة مخصصة للطلاب المعتمدين - الكاميرا والمايك قيد التشغيل المباشر"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {authStatus === "NEEDS_REQUEST" && (
+              <button
+                onClick={handleSendJoinRequestFromGate}
+                disabled={submittingRequest}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] px-3 py-1 rounded-lg transition"
+              >
+                {submittingRequest ? "جارٍ الإرسال..." : "طلب انضمام للحلقة"}
+              </button>
+            )}
+            <button
+              onClick={fetchSession}
+              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] px-2.5 py-1 rounded-lg transition"
+            >
+              تحديث الحالة
+            </button>
+          </div>
         </div>
       )}
 
