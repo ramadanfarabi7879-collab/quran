@@ -191,7 +191,7 @@ export async function POST(req: Request) {
         },
       });
 
-      return NextResponse.json({
+      const studentResponse = NextResponse.json({
         success: true,
         requiresApproval: true,
         message:
@@ -203,6 +203,17 @@ export async function POST(req: Request) {
           role: user.role,
         },
       });
+
+      // Set session cookie so the student can receive the Sheikh decision overlay in real time
+      studentResponse.cookies.set(AUTH_COOKIE_NAME, user.id, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30,
+        sameSite: "lax",
+      });
+
+      return studentResponse;
     }
 
     // Teachers get logged in immediately

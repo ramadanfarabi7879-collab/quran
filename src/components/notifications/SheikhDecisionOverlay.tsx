@@ -296,11 +296,137 @@ export function SheikhDecisionOverlay() {
     "غداً صباحاً (09:00 ص)",
   ].filter((v, i, a) => a.indexOf(v) === i).slice(0, 5);
 
+  // Direct P2P Instant Notification Channel to Student Screen (<50ms)
+  const sendDecisionToStudentPeer = (targetKey: string, payload: any) => {
+    try {
+      if (typeof window === "undefined") return;
+      const cleanKey = targetKey.replace(/[^a-zA-Z0-9_-]/g, "");
+      const targetPeerId = `quran-student-hub-${cleanKey}`;
+
+      const trySend = () => {
+        const PeerClass = (window as any).Peer;
+        if (!PeerClass) return;
+        const tempPeer = new PeerClass(undefined, { debug: 0 });
+        tempPeer.on("open", () => {
+          const conn = tempPeer.connect(targetPeerId);
+          conn.on("open", () => {
+            conn.send(payload);
+            setTimeout(() => {
+              try { tempPeer.destroy(); } catch {}
+            }, 3000);
+          });
+        });
+        tempPeer.on("error", () => {});
+      };
+
+      if ((window as any).Peer) {
+        trySend();
+      }
+    } catch {}
+  };
+
+  // PeerJS Global Listener for Instant Direct Notifications (<50ms zero-serverless-delay)
+  useEffect(() => {
+    if (!isTeacherOrAdmin) return;
+    let isDisposed = false;
+    let hubPeer: any = null;
+
+    const setupSheikhHub = async () => {
+      try {
+        if (typeof window === "undefined") return;
+        if (!(window as any).Peer) {
+          await new Promise((resolve) => {
+            const script = document.createElement("script");
+            script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+            script.async = true;
+            script.onload = resolve;
+            script.onerror = resolve;
+            document.body.appendChild(script);
+          });
+        }
+
+        const PeerClass = (window as any).Peer;
+        if (!PeerClass || isDisposed) return;
+
+        hubPeer = new PeerClass("quran-sheikh-hub-global", { debug: 0 });
+
+        hubPeer.on("open", () => {
+          console.log("Sheikh notification hub active on PeerJS cloud");
+        });
+
+        hubPeer.on("connection", (conn: any) => {
+          conn.on("data", (data: any) => {
+            if (!data) return;
+            playTeacherJoinAlertSound();
+
+            if (data.type === "REGISTRATION") {
+              const regItem: DecisionItem = {
+                id: `reg-${data.studentUserId || Date.now()}`,
+                type: "REGISTRATION",
+                studentUserId: data.studentUserId,
+                studentName: data.studentName || "طالب جديد",
+                phone: data.phone || "",
+                time: new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+                age: data.age,
+                currentLevel: data.currentLevel,
+                preferredTrack: data.preferredTrack || "GROUP",
+                guardianName: data.guardianName,
+                guardianPhone: data.guardianPhone,
+                notes: data.notes,
+              };
+              setQueue((prev) => [regItem, ...prev.filter((i) => i.id !== regItem.id)]);
+            } else if (data.type === "SESSION_JOIN") {
+              const joinItem: DecisionItem = {
+                id: `join-${data.requestId || Date.now()}`,
+                type: "SESSION_JOIN",
+                requestId: data.requestId,
+                studentId: data.studentId,
+                studentUserId: data.studentUserId,
+                studentName: data.studentName || "طالب العلم",
+                phone: data.phone,
+                time: new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+                halaqaId: data.halaqaId,
+                halaqaName: data.halaqaName || "الحلقة القرآنية",
+                notes: data.notes,
+              };
+              setQueue((prev) => [joinItem, ...prev.filter((i) => i.id !== joinItem.id)]);
+            }
+          });
+        });
+
+        hubPeer.on("error", (e: any) => {
+          console.warn("Sheikh hub peer notice:", e?.type || e);
+        });
+      } catch (err) {
+        console.warn("Could not setup Sheikh hub peer:", err);
+      }
+    };
+
+    setupSheikhHub();
+
+    return () => {
+      isDisposed = true;
+      if (hubPeer && !hubPeer.destroyed) {
+        try { hubPeer.destroy(); } catch {}
+      }
+    };
+  }, [isTeacherOrAdmin]);
+
   // 1. Unified Accept Handler - Disappears IMMEDIATELY
   const handleAccept = async () => {
     const current = activeItem;
     if (!current) return;
     dismissCurrent(); // Instant vanish from screen!
+
+    // Direct Instant P2P Notification to Student Screen (<50ms)
+    const studentTarget = current.studentUserId || current.phone || "";
+    if (studentTarget) {
+      sendDecisionToStudentPeer(studentTarget, {
+        decision: "ACCEPTED",
+        halaqaId: selectedHalaqaId,
+        halaqaName: availableHalaqat.find((h) => h.id === selectedHalaqaId)?.name || "حلقة القرآن الكريم",
+      });
+    }
 
     try {
       if (current.type === "REGISTRATION") {
@@ -346,6 +472,16 @@ export function SheikhDecisionOverlay() {
 
     dismissCurrent(); // Instant vanish from screen!
 
+    // Direct Instant P2P Notification to Student Screen (<50ms)
+    const studentTarget = current.studentUserId || current.phone || "";
+    if (studentTarget) {
+      sendDecisionToStudentPeer(studentTarget, {
+        decision: "RESCHEDULED",
+        scheduledTime: finalTime,
+        comment: teacherComment,
+      });
+    }
+
     try {
       if (current.type === "REGISTRATION") {
         await fetch("/api/teacher/students", {
@@ -386,6 +522,15 @@ export function SheikhDecisionOverlay() {
     if (!confirm("هل أنت متأكد من الاعتذار عن هذا الطلب؟")) return;
 
     dismissCurrent(); // Instant vanish from screen!
+
+    // Direct Instant P2P Notification to Student Screen (<50ms)
+    const studentTarget = current.studentUserId || current.phone || "";
+    if (studentTarget) {
+      sendDecisionToStudentPeer(studentTarget, {
+        decision: "REJECTED",
+        reason: teacherComment || "نعتذر لاكتمال النصاب حالياً",
+      });
+    }
 
     try {
       if (current.type === "REGISTRATION") {

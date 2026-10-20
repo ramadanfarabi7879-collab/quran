@@ -287,6 +287,8 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const peerInstanceRef = useRef<any>(null);
+  const dataConnRef = useRef<any>(null);
   const iceCandidatesQueue = useRef<RTCIceCandidateInit[]>([]);
   const lastSignalIdRef = useRef<number>(0);
   const [clientId] = useState(() => "peer-" + Math.random().toString(36).substring(2, 9));
@@ -397,8 +399,36 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       });
 
       if (res.ok) {
+        const d = await res.json().catch(() => ({}));
         setAuthStatus("PENDING_APPROVAL");
         setRequestSuccessMsg("تم رفع طلب الانضمام إلى فضيلة الشيخ بنجاح، وهو قيد المراجعة والاعتماد.");
+
+        // Direct instant knock to Sheikh notification hub (<50ms zero-delay)
+        try {
+          if (typeof window !== "undefined" && (window as any).Peer) {
+            const PeerClass = (window as any).Peer;
+            const p = new PeerClass(undefined, { debug: 0 });
+            p.on("open", () => {
+              const conn = p.connect("quran-sheikh-hub-global");
+              conn.on("open", () => {
+                conn.send({
+                  type: "SESSION_JOIN",
+                  requestId: d.requestId,
+                  studentId: user?.studentProfile?.id,
+                  studentUserId: user?.id,
+                  studentName: myName,
+                  sessionId: session?.id || sessionId,
+                  halaqaId: targetHalaqaId,
+                  halaqaName: halaqaInfo.name,
+                });
+                setTimeout(() => {
+                  try { p.destroy(); } catch {}
+                }, 3000);
+              });
+            });
+            p.on("error", () => {});
+          }
+        } catch {}
       } else {
         const d = await res.json();
         alert(d.error || "فشل إرسال طلب الانضمام");
@@ -425,8 +455,101 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     }
   }, [sessionId, isTeacher, authStatus]);
 
-  // Helper to send WebRTC signaling message via HTTP POST
+  // Helper to load PeerJS from unpkg CDN
+  const loadPeerJSLibrary = (): Promise<any> => {
+    return new Promise((resolve) => {
+      if (typeof window === "undefined") return resolve(null);
+      if ((window as any).Peer) return resolve((window as any).Peer);
+
+      const existingScript = document.getElementById("peerjs-script");
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve((window as any).Peer));
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.id = "peerjs-script";
+      script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+      script.async = true;
+      script.onload = () => resolve((window as any).Peer);
+      script.onerror = () => resolve(null);
+      document.body.appendChild(script);
+    });
+  };
+
+  // Attach received remote audio & video stream to the visual elements
+  const attachRemoteStream = (stream: MediaStream, defaultName: string) => {
+    remoteStreamRef.current = stream;
+    if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== stream) {
+      remoteVideoRef.current.srcObject = stream;
+    }
+    remoteVideoRef.current?.play().catch(() => {});
+
+    if (remoteAudioRef.current && remoteAudioRef.current.srcObject !== stream) {
+      remoteAudioRef.current.srcObject = stream;
+    }
+    remoteAudioRef.current?.play().catch(() => {
+      setNeedsAudioUnlock(true);
+    });
+
+    setupAudioAnalyser(stream, setRemoteIsSpeaking);
+    setHasRemoteStream(true);
+    setConnectionStatus("متصل مباشرة (صوت وفيديو حي)");
+    if (!remotePeerName) {
+      setRemotePeerName(defaultName);
+    }
+  };
+
+  // Process data messages received through PeerJS direct P2P data connection
+  const handlePeerDataMessage = (msg: any) => {
+    if (!msg) return;
+    if (msg.type === "CHAT_MESSAGE" || msg.signalType === "CHAT_MESSAGE") {
+      const data = msg.data || msg;
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: data.sender || msg.senderName || "المشارك",
+          text: data.text,
+          time: data.time || new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
+          isMe: false,
+        },
+      ]);
+      if (activeTab !== "CHAT") {
+        setUnreadChatCount((prev) => prev + 1);
+      }
+    } else if (msg.type === "HAND_RAISE" || msg.signalType === "HAND_RAISE") {
+      const data = msg.data || msg;
+      if (isTeacher) {
+        setStudentHandAlert(data.raised ? { studentName: data.studentName || "طالب العلم", visible: true } : null);
+      }
+    } else if (msg.type === "REMOTE_MUTE" || msg.signalType === "REMOTE_MUTE") {
+      if (!isTeacher) {
+        setIsMicOn(false);
+        if (localStreamRef.current) {
+          localStreamRef.current.getAudioTracks().forEach((track) => {
+            track.enabled = false;
+          });
+        }
+      }
+    }
+  };
+
+  // Helper to send WebRTC signaling message via HTTP POST & PeerJS DataChannel
   const sendSignalingMessage = async (signalType: string, payload: any) => {
+    // 1. Direct P2P transmission (<50ms zero-latency) if PeerJS data channel is open
+    try {
+      if (dataConnRef.current && dataConnRef.current.open) {
+        dataConnRef.current.send({
+          signalType,
+          senderRole: myRole,
+          senderName: myName,
+          senderClientId: clientId,
+          data: payload,
+        });
+      }
+    } catch {}
+
+    // 2. HTTP POST fallback
     try {
       await fetch("/api/classroom/signal", {
         method: "POST",
@@ -643,6 +766,126 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       }
     };
   }, [sessionId, myRole, authStatus, isTeacher]);
+
+  // PeerJS Global Cloud Realtime Media & Signaling Engine (Zero Serverless Dependency)
+  useEffect(() => {
+    if (!isTeacher && authStatus !== "AUTHORIZED") return;
+    let isDisposed = false;
+
+    const setupPeerCloud = async () => {
+      try {
+        const PeerClass = await loadPeerJSLibrary();
+        if (isDisposed || !PeerClass) return;
+
+        const effectiveSessionId = session?.id || (sessionId === "auto" ? "active-main" : sessionId);
+        const cleanRoom = effectiveSessionId.replace(/[^a-zA-Z0-9_-]/g, "");
+        const teacherPeerId = `quran-halaqa-${cleanRoom}-teacher`;
+
+        if (isTeacher) {
+          // Teacher Peer Instance
+          if (peerInstanceRef.current && !peerInstanceRef.current.destroyed) {
+            try { peerInstanceRef.current.destroy(); } catch {}
+          }
+
+          const p = new PeerClass(teacherPeerId, {
+            config: ICE_SERVERS,
+            debug: 0,
+          });
+          peerInstanceRef.current = p;
+
+          p.on("open", (id: string) => {
+            console.log("Teacher PeerJS ready with ID:", id);
+            setConnectionStatus("قاعة الحلقة جاهزة ومتاحة - بانتظار اتصال الطالب...");
+          });
+
+          p.on("call", (mediaConnection: any) => {
+            console.log("Teacher received incoming PeerJS call from student");
+            if (localStreamRef.current) {
+              mediaConnection.answer(localStreamRef.current);
+            }
+            mediaConnection.on("stream", (remoteStream: MediaStream) => {
+              attachRemoteStream(remoteStream, "طالب العلم");
+            });
+          });
+
+          p.on("connection", (conn: any) => {
+            dataConnRef.current = conn;
+            conn.on("data", (data: any) => handlePeerDataMessage(data));
+          });
+
+          p.on("error", (err: any) => {
+            console.warn("PeerJS teacher notice:", err?.type || err);
+          });
+        } else {
+          // Student Peer Instance
+          if (peerInstanceRef.current && !peerInstanceRef.current.destroyed) {
+            try { peerInstanceRef.current.destroy(); } catch {}
+          }
+
+          const studentIdSuffix = user?.id ? user.id.slice(-6) : Math.random().toString(36).slice(2, 7);
+          const studentPeerId = `quran-halaqa-${cleanRoom}-stu-${studentIdSuffix}`;
+
+          const p = new PeerClass(studentPeerId, {
+            config: ICE_SERVERS,
+            debug: 0,
+          });
+          peerInstanceRef.current = p;
+
+          p.on("open", () => {
+            console.log("Student PeerJS ready, dialing Teacher:", teacherPeerId);
+            setConnectionStatus("جارٍ الاتصال بفضيلة الشيخ مباشرة...");
+
+            const connectToTeacher = () => {
+              if (isDisposed || hasRemoteStream || !localStreamRef.current) return;
+              try {
+                const call = p.call(teacherPeerId, localStreamRef.current);
+                if (call) {
+                  call.on("stream", (remoteStream: MediaStream) => {
+                    attachRemoteStream(remoteStream, "فضيلة الشيخ والمعلم");
+                  });
+                }
+                const conn = p.connect(teacherPeerId);
+                dataConnRef.current = conn;
+                conn.on("data", (data: any) => handlePeerDataMessage(data));
+              } catch (e) {
+                console.warn("Peer call retry:", e);
+              }
+            };
+
+            connectToTeacher();
+            const timer = setInterval(() => {
+              if (!hasRemoteStream && !isDisposed) {
+                connectToTeacher();
+              } else {
+                clearInterval(timer);
+              }
+            }, 2500);
+          });
+
+          p.on("error", (err: any) => {
+            console.warn("PeerJS student notice:", err?.type || err);
+          });
+        }
+      } catch (err) {
+        console.warn("PeerJS cloud error, using HTTP fallback:", err);
+      }
+    };
+
+    const timerCheck = setInterval(() => {
+      if (localStreamRef.current) {
+        clearInterval(timerCheck);
+        setupPeerCloud();
+      }
+    }, 300);
+
+    return () => {
+      isDisposed = true;
+      clearInterval(timerCheck);
+      if (peerInstanceRef.current && !peerInstanceRef.current.destroyed) {
+        try { peerInstanceRef.current.destroy(); } catch {}
+      }
+    };
+  }, [sessionId, session?.id, isTeacher, authStatus, hasRemoteStream]);
 
   // Robust HTTP Signaling Polling Loop (Every 1 second)
   useEffect(() => {

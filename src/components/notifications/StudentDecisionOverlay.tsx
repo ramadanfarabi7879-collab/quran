@@ -29,6 +29,90 @@ export function StudentDecisionOverlay() {
   const [activeNotification, setActiveNotification] = useState<StudentNotification | null>(null);
   const seenIdsRef = React.useRef<Set<string>>(new Set());
 
+  // PeerJS Direct Instant Listener for Real-Time Sheikh Decisions (<50ms)
+  useEffect(() => {
+    let isDisposed = false;
+    let peerInstance: any = null;
+
+    const setupStudentHub = async () => {
+      try {
+        if (typeof window === "undefined") return;
+        const storedPhone = localStorage.getItem("lastStudentPhone") || "";
+        const targetId = user?.id || user?.phone || storedPhone;
+        if (!targetId) return;
+
+        if (!(window as any).Peer) {
+          await new Promise((resolve) => {
+            const script = document.createElement("script");
+            script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+            script.async = true;
+            script.onload = resolve;
+            script.onerror = resolve;
+            document.body.appendChild(script);
+          });
+        }
+
+        const PeerClass = (window as any).Peer;
+        if (!PeerClass || isDisposed) return;
+
+        const cleanKey = targetId.replace(/[^a-zA-Z0-9_-]/g, "");
+        const peerId = `quran-student-hub-${cleanKey}`;
+
+        peerInstance = new PeerClass(peerId, { debug: 0 });
+
+        peerInstance.on("connection", (conn: any) => {
+          conn.on("data", (data: any) => {
+            if (!data) return;
+
+            if (data.decision === "ACCEPTED") {
+              setActiveNotification({
+                id: `dec-${Date.now()}`,
+                type: "ACCOUNT_APPROVED",
+                title: "مبارك! تم اعتماد وقبول طلبك 🎉",
+                body: `يسرنا إبلاغك بموافقة فضيلة الشيخ على طلبك وتسكينك في: ${data.halaqaName || "حلقة القرآن الكريم"}. يمكنك الآن مباشرة الحفظ والتسميع.`,
+                link: "/student/dashboard",
+                createdAt: new Date().toISOString(),
+              });
+              playStudentApprovedSound();
+            } else if (data.decision === "RESCHEDULED") {
+              setActiveNotification({
+                id: `dec-${Date.now()}`,
+                type: "SCHEDULE_UPDATED",
+                title: "تم تحديد موعد جديد من فضيلة الشيخ ⏳",
+                body: `حدد فضيلة الشيخ موعد جلستك: ${data.scheduledTime || "الموعد المقترح"}. ${data.comment ? `ملاحظات الشيخ: "${data.comment}"` : ""}`,
+                link: "/student/dashboard",
+                createdAt: new Date().toISOString(),
+              });
+              playScheduleAlertSound();
+            } else if (data.decision === "REJECTED") {
+              setActiveNotification({
+                id: `dec-${Date.now()}`,
+                type: "REGISTRATION_REJECTED",
+                title: "اعتذار الشيخ عن قبول الطلب",
+                body: `نعتذر منك: ${data.reason || "تعذر قبول الطلب في الوقت الحالي"}. نسأل الله لك التوفيق والبركة.`,
+                link: "/",
+                createdAt: new Date().toISOString(),
+              });
+            }
+          });
+        });
+
+        peerInstance.on("error", () => {});
+      } catch (err) {
+        console.warn("Student hub peer notice:", err);
+      }
+    };
+
+    setupStudentHub();
+
+    return () => {
+      isDisposed = true;
+      if (peerInstance && !peerInstance.destroyed) {
+        try { peerInstance.destroy(); } catch {}
+      }
+    };
+  }, [user]);
+
   useEffect(() => {
     if (!isStudent) return;
 

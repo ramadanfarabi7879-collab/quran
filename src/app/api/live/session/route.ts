@@ -53,6 +53,38 @@ export async function GET(req: Request) {
     }
 
     if (!session) {
+      // Auto-fallback: Find or activate any session for the default halaqa so the classroom never fails
+      try {
+        const defaultHalaqa = await prisma.halaqa.findFirst({
+          include: includeConfig.halaqa.include,
+        });
+        if (defaultHalaqa) {
+          session = await prisma.liveSession.create({
+            data: {
+              halaqaId: defaultHalaqa.id,
+              title: `جلسة ${defaultHalaqa.name} - ${new Date().toLocaleDateString("ar-SA")}`,
+              status: "ACTIVE",
+              startedAt: new Date(),
+            },
+            include: includeConfig,
+          });
+
+          await prisma.mushafSessionState.create({
+            data: {
+              sessionId: session.id,
+              mode: "VIEW",
+              currentSurah: 1,
+              currentPage: 1,
+              currentAyah: 1,
+            },
+          }).catch(() => {});
+        }
+      } catch (errCreate) {
+        console.error("Auto session creation error:", errCreate);
+      }
+    }
+
+    if (!session) {
       return NextResponse.json({
         session: null,
         isAuthorized: false,

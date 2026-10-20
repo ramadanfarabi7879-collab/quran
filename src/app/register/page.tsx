@@ -33,6 +33,79 @@ export default function RegisterStudentPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [submittedData, setSubmittedData] = useState<any | null>(null);
+  const [liveDecision, setLiveDecision] = useState<{
+    type: "ACCEPTED" | "RESCHEDULED" | "REJECTED";
+    halaqaName?: string;
+    scheduledTime?: string;
+    comment?: string;
+    reason?: string;
+  } | null>(null);
+
+  // Real-time listener for Sheikh decision while on the registration submitted screen
+  React.useEffect(() => {
+    if (!submittedData) return;
+    let isDisposed = false;
+    let peerInstance: any = null;
+
+    const setupDecisionListener = async () => {
+      try {
+        if (typeof window === "undefined") return;
+        const targetId = submittedData.userId || submittedData.phone;
+        if (!targetId) return;
+
+        if (!(window as any).Peer) {
+          await new Promise((resolve) => {
+            const script = document.createElement("script");
+            script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+            script.async = true;
+            script.onload = resolve;
+            script.onerror = resolve;
+            document.body.appendChild(script);
+          });
+        }
+
+        const PeerClass = (window as any).Peer;
+        if (!PeerClass || isDisposed) return;
+
+        const cleanKey = targetId.replace(/[^a-zA-Z0-9_-]/g, "");
+        peerInstance = new PeerClass(`quran-student-hub-${cleanKey}`, { debug: 0 });
+
+        peerInstance.on("connection", (conn: any) => {
+          conn.on("data", (data: any) => {
+            if (!data) return;
+            if (data.decision === "ACCEPTED") {
+              setLiveDecision({
+                type: "ACCEPTED",
+                halaqaName: data.halaqaName || "حلقة القرآن الكريم",
+              });
+            } else if (data.decision === "RESCHEDULED") {
+              setLiveDecision({
+                type: "RESCHEDULED",
+                scheduledTime: data.scheduledTime || "الموعد المحدد",
+                comment: data.comment,
+              });
+            } else if (data.decision === "REJECTED") {
+              setLiveDecision({
+                type: "REJECTED",
+                reason: data.reason || "نعتذر لاكتمال النصاب حالياً",
+              });
+            }
+          });
+        });
+
+        peerInstance.on("error", () => {});
+      } catch {}
+    };
+
+    setupDecisionListener();
+
+    return () => {
+      isDisposed = true;
+      if (peerInstance && !peerInstance.destroyed) {
+        try { peerInstance.destroy(); } catch {}
+      }
+    };
+  }, [submittedData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +135,56 @@ export default function RegisterStudentPage() {
       if (!res.ok && !data.requiresApproval) {
         setError(data.error || "فشل إرسال طلب التسجيل");
       } else {
+        const studentUserId = data.user?.id;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("lastStudentPhone", phone);
+          if (studentUserId) localStorage.setItem("lastStudentUserId", studentUserId);
+        }
+
+        // Direct instant notification knock to Sheikh hub (<50ms zero-latency)
+        try {
+          if (typeof window !== "undefined") {
+            const sendDirectPeerKnock = () => {
+              const PeerClass = (window as any).Peer;
+              if (!PeerClass) return;
+              const p = new PeerClass(undefined, { debug: 0 });
+              p.on("open", () => {
+                const conn = p.connect("quran-sheikh-hub-global");
+                conn.on("open", () => {
+                  conn.send({
+                    type: "REGISTRATION",
+                    studentUserId,
+                    studentName: name,
+                    phone,
+                    age,
+                    currentLevel,
+                    preferredTrack,
+                    guardianName,
+                    guardianPhone,
+                    notes: registrationNotes,
+                  });
+                  setTimeout(() => {
+                    try { p.destroy(); } catch {}
+                  }, 3000);
+                });
+              });
+              p.on("error", () => {});
+            };
+
+            if ((window as any).Peer) {
+              sendDirectPeerKnock();
+            } else {
+              const script = document.createElement("script");
+              script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+              script.async = true;
+              script.onload = sendDirectPeerKnock;
+              document.body.appendChild(script);
+            }
+          }
+        } catch {}
+
         setSubmittedData({
+          userId: studentUserId,
           name: data.user?.name || name,
           phone: data.user?.phone || phone,
           email: email.trim() || "غير مدخل (اختياري)",
@@ -123,6 +245,55 @@ export default function RegisterStudentPage() {
                 انتهى دورك الآن، وصل طلبك مباشرة إلى فضيلة الشيخ لمراجعة بياناتك، وتحديد المسار والموعد المناسب والتواصل معك.
               </p>
             </div>
+
+            {/* Real-time Sheikh Live Decision Card */}
+            {liveDecision ? (
+              <div
+                className={`p-5 rounded-3xl border-2 text-center space-y-3 shadow-xl animate-in zoom-in-95 duration-300 ${
+                  liveDecision.type === "ACCEPTED"
+                    ? "bg-emerald-950/70 border-emerald-400 text-white"
+                    : liveDecision.type === "RESCHEDULED"
+                    ? "bg-amber-950/70 border-amber-400 text-white"
+                    : "bg-red-950/70 border-red-500 text-white"
+                }`}
+              >
+                <div className="w-14 h-14 rounded-2xl mx-auto flex items-center justify-center bg-white/10 border border-white/20">
+                  {liveDecision.type === "ACCEPTED" ? (
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400 animate-bounce" />
+                  ) : liveDecision.type === "RESCHEDULED" ? (
+                    <Clock className="w-8 h-8 text-amber-400 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="w-8 h-8 text-red-400" />
+                  )}
+                </div>
+
+                <div className="font-black text-lg">
+                  {liveDecision.type === "ACCEPTED"
+                    ? "🎉 مبارك! تم اعتماد قبولك بواسطة فضيلة الشيخ"
+                    : liveDecision.type === "RESCHEDULED"
+                    ? "⏳ تم تحديد موعد جديد لمقابلتك من فضيلة الشيخ"
+                    : "نعتذر منك: اعتذار فضيلة الشيخ"}
+                </div>
+
+                <p className="text-xs text-white/90 leading-relaxed max-w-sm mx-auto">
+                  {liveDecision.type === "ACCEPTED"
+                    ? `تم تسكينك بنجاح في: ${liveDecision.halaqaName}. يمكنك الدخول فوراً وبدء الحفظ والمراجعة مع الشيخ.`
+                    : liveDecision.type === "RESCHEDULED"
+                    ? `الموعد المحدد: ${liveDecision.scheduledTime}. ${liveDecision.comment ? `ملاحظات الشيخ: "${liveDecision.comment}"` : ""}`
+                    : liveDecision.reason}
+                </p>
+
+                {liveDecision.type === "ACCEPTED" && (
+                  <Link
+                    href="/student/dashboard"
+                    className="inline-flex items-center justify-center gap-2 w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs transition shadow-lg"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    دخول لوحة الطالب وبدء الحلقة الآن
+                  </Link>
+                )}
+              </div>
+            ) : null}
 
             {/* Summary card */}
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-right space-y-2 text-xs">
