@@ -126,54 +126,79 @@ export function AppProviders({ children }: { children: ReactNode }) {
     window.location.href = "/login";
   };
 
-  // Setup Global Realtime EventSource
+  // Setup Global Realtime - polling mode for Vercel, SSE for local dev
   useEffect(() => {
     let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let pollInterval: NodeJS.Timeout | null = null;
+    let isMounted = true;
 
-    const connectSSE = () => {
+    const setupRealtime = async () => {
       try {
-        eventSource = new EventSource("/api/realtime/stream?channel=global");
+        // Check if SSE works (returns mode:polling on Vercel)
+        const testRes = await fetch("/api/realtime/stream?channel=global");
+        const testData = await testRes.json().catch(() => null);
 
-        eventSource.onopen = () => {
+        if (testData?.mode === "polling") {
+          // Vercel: use polling instead of SSE
           setConnected(true);
-        };
-
-        eventSource.onmessage = (e) => {
-          try {
-            const event: RealtimeEvent = JSON.parse(e.data);
-            setLastEvent(event);
-
-            // Notify registered listeners
-            if (event.channel && callbacks.has(event.channel)) {
-              callbacks.get(event.channel)!.forEach((cb) => cb(event));
-            }
-            if (callbacks.has("global")) {
-              callbacks.get("global")!.forEach((cb) => cb(event));
-            }
-          } catch (err) {
-            // Heartbeat ping
-          }
-        };
-
-        eventSource.onerror = () => {
-          setConnected(false);
-          if (eventSource) eventSource.close();
-          reconnectTimeout = setTimeout(connectSSE, 4000);
-        };
-      } catch (err) {
-        setConnected(false);
-        reconnectTimeout = setTimeout(connectSSE, 4000);
+          pollInterval = setInterval(async () => {
+            if (!isMounted) return;
+            try {
+              // Poll for any new events via a lightweight endpoint
+              const res = await fetch("/api/realtime/poll");
+              if (res.ok) {
+                const data = await res.json();
+                if (data.events?.length) {
+                  data.events.forEach((event: RealtimeEvent) => {
+                    setLastEvent(event);
+                    if (event.channel && callbacks.has(event.channel)) {
+                      callbacks.get(event.channel)!.forEach((cb) => cb(event));
+                    }
+                    if (callbacks.has("global")) {
+                      callbacks.get("global")!.forEach((cb) => cb(event));
+                    }
+                  });
+                }
+              }
+            } catch {}
+          }, 15000); // Poll every 15 seconds
+        } else {
+          // Local dev: use SSE
+          eventSource = new EventSource("/api/realtime/stream?channel=global");
+          eventSource.onopen = () => { if (isMounted) setConnected(true); };
+          eventSource.onmessage = (e) => {
+            try {
+              const event: RealtimeEvent = JSON.parse(e.data);
+              if (isMounted) {
+                setLastEvent(event);
+                if (event.channel && callbacks.has(event.channel)) {
+                  callbacks.get(event.channel)!.forEach((cb) => cb(event));
+                }
+                if (callbacks.has("global")) {
+                  callbacks.get("global")!.forEach((cb) => cb(event));
+                }
+              }
+            } catch {}
+          };
+          eventSource.onerror = () => {
+            if (isMounted) setConnected(false);
+          };
+        }
+      } catch {
+        // Fallback: just mark as connected without realtime
+        if (isMounted) setConnected(true);
       }
     };
 
-    connectSSE();
+    setupRealtime();
 
     return () => {
+      isMounted = false;
       if (eventSource) eventSource.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, [callbacks]);
+
 
   const subscribe = (channel: string, callback: (event: RealtimeEvent) => void) => {
     if (!callbacks.has(channel)) {
