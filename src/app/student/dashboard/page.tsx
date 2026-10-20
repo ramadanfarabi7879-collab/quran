@@ -480,14 +480,26 @@ export default function StudentDashboard() {
                 </div>
 
                 <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
-                  <Link
-                    href={`/classroom/${approvedHalaqat[0].currentLiveSessionId || approvedHalaqat[0].id}?role=student`}
-                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black text-xs py-3 rounded-2xl shadow-md transition-transform hover:scale-102 active:scale-98"
-                    title="متابعة الحلقة (طالب معتمد)"
-                  >
-                    <Video className="w-4 h-4" />
-                    <span>متابعة الحلقة 🎥</span>
-                  </Link>
+                  {approvedHalaqat[0].isLiveNow ? (
+                    <Link
+                      href={`/classroom/${approvedHalaqat[0].currentLiveSessionId || approvedHalaqat[0].id}?role=student`}
+                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-black text-xs py-3 rounded-2xl shadow-md transition-transform hover:scale-102 active:scale-98 animate-pulse"
+                      title="بث مباشر منعقد الآن - انقر للمتابعة"
+                    >
+                      <Video className="w-4 h-4" />
+                      <span>متابعة البث المباشر الآن 🎥</span>
+                    </Link>
+                  ) : (
+                    <div className="w-full flex items-center justify-between text-xs py-2.5 px-3.5 rounded-xl bg-slate-100 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 font-bold border border-slate-200/60 dark:border-slate-700/60">
+                      <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                        <Clock className="w-3.5 h-3.5 text-amber-500" />
+                        موعد الحلقة: {approvedHalaqat[0].startTime}
+                      </span>
+                      <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium">
+                        مجدولة 📅
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : hasPendingHalaqa ? (

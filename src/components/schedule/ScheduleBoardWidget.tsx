@@ -40,6 +40,7 @@ export interface ScheduleHalaqa {
   status: string;
   studentStatus?: string;
   isApprovedBySheikh?: boolean;
+  isLiveNow?: boolean;
   currentLiveSessionId?: string | null;
   teacher?: {
     user?: {
@@ -599,14 +600,24 @@ export function ScheduleBoardWidget({
                         ) : (
                           <div className="flex items-center">
                             {h.studentStatus === "ENROLLED" ? (
-                              <Link
-                                href={`/classroom/${h.currentLiveSessionId || h.id}?role=student`}
-                                className="inline-flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow-md transition-transform hover:scale-105 active:scale-95"
-                                title="متابعة الحلقة (طالب معتمد)"
-                              >
-                                <Video className="w-3.5 h-3.5" />
-                                <span>متابعة الحلقة 🎥</span>
-                              </Link>
+                              h.isLiveNow ? (
+                                <Link
+                                  href={`/classroom/${h.currentLiveSessionId || h.id}?role=student`}
+                                  className="inline-flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow-md transition-transform hover:scale-105 active:scale-95 animate-pulse"
+                                  title="بث مباشر منعقد الآن - انقر للمتابعة"
+                                >
+                                  <Video className="w-3.5 h-3.5" />
+                                  <span>متابعة البث 🎥</span>
+                                </Link>
+                              ) : (
+                                <span
+                                  className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60"
+                                  title={`حلقة مجدولة في تمام الساعة ${h.startTime}`}
+                                >
+                                  <Clock className="w-3 h-3 text-amber-500" />
+                                  <span>مجدولة {h.startTime}</span>
+                                </span>
+                              )
                             ) : h.studentStatus === "PENDING" ? (
                               <span
                                 className="inline-flex items-center gap-1.5 bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold text-xs px-3.5 py-2 rounded-xl border border-amber-500/30"
