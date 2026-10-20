@@ -1304,7 +1304,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                     <MicOff className="w-3 h-3 text-red-400" />
                   )
                 )}
-                <span>{!isTeacher ? "عبد الرحمن العلي (أنت)" : (remotePeerName || "عبد الرحمن محمد العلي")}</span>
+                <span>{!isTeacher ? `${myName} (أنت)` : (remotePeerName || "الطالب")}</span>
               </div>
 
               {((!isTeacher && isHandRaised) || (isTeacher && studentHandAlert?.visible)) && (
