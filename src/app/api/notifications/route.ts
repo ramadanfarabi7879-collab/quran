@@ -29,7 +29,36 @@ export async function GET(req: Request) {
       take: 20,
     });
 
-    return NextResponse.json({ notifications });
+    // Check currently active live sessions
+    const activeSessions = await prisma.liveSession.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true },
+    });
+    const activeSessionIds = new Set(activeSessions.map((s) => s.id));
+
+    // Filter out stale starting notifications for ended sessions
+    const validNotifications = [];
+    const staleIdsToMarkRead: string[] = [];
+
+    for (const n of notifications) {
+      if (n.type === "HALAQA_STARTING") {
+        const linkParts = n.link ? n.link.split("/classroom/")[1]?.split("?")[0] : null;
+        if (!linkParts || !activeSessionIds.has(linkParts)) {
+          staleIdsToMarkRead.push(n.id);
+          continue;
+        }
+      }
+      validNotifications.push(n);
+    }
+
+    if (staleIdsToMarkRead.length > 0) {
+      await prisma.notification.updateMany({
+        where: { id: { in: staleIdsToMarkRead } },
+        data: { isRead: true },
+      }).catch(() => {});
+    }
+
+    return NextResponse.json({ notifications: validNotifications });
   } catch (error) {
     console.error("Get notifications error:", error);
     return NextResponse.json({ error: "فشل استرداد الإشعارات", notifications: [] }, { status: 200 });

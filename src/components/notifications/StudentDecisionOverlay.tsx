@@ -22,6 +22,16 @@ interface StudentNotification {
   createdAt: string;
 }
 
+const DECISION_TYPES = new Set([
+  "ACCOUNT_APPROVED",
+  "SESSION_APPROVED",
+  "JOIN_REQUEST_APPROVED",
+  "SCHEDULE_UPDATED",
+  "REGISTRATION_REJECTED",
+  "JOIN_REQUEST_DECIDED",
+  "SESSION_REJECTED",
+]);
+
 export function StudentDecisionOverlay() {
   const { user } = useAuth();
   const isTeacherPath = typeof window !== "undefined" && (window.location.pathname.startsWith("/teacher") || window.location.search.includes("role=teacher"));
@@ -134,9 +144,12 @@ export function StudentDecisionOverlay() {
         const res = await fetch(`/api/notifications${queryParam}`);
         if (!res.ok || !isMounted) return;
         const data = await res.json();
-        const unread = (data.notifications || []).filter(
-          (n: any) => !n.isRead && !seenIdsRef.current.has(n.id)
-        );
+        const unread = (data.notifications || []).filter((n: any) => {
+          if (n.isRead) return false;
+          if (seenIdsRef.current.has(n.id)) return false;
+          if (typeof window !== "undefined" && localStorage.getItem(`dismissed_notif_${n.id}`)) return false;
+          return DECISION_TYPES.has(n.type);
+        });
 
         if (unread.length > 0 && !activeNotification) {
           const latest = unread[0];
@@ -163,6 +176,10 @@ export function StudentDecisionOverlay() {
   const handleDismiss = async () => {
     if (!activeNotification) return;
     const id = activeNotification.id;
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`dismissed_notif_${id}`, "true");
+    }
+    seenIdsRef.current.add(id);
     setActiveNotification(null);
 
     try {
