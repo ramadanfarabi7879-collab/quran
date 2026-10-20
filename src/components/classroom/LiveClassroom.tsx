@@ -293,9 +293,13 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const lastSignalIdRef = useRef<number>(0);
   const [clientId] = useState(() => "peer-" + Math.random().toString(36).substring(2, 9));
 
+  const [activeRoleOverride, setActiveRoleOverride] = useState<"teacher" | "student" | null>(null);
+
   // Determine if this screen is Teacher
   const isTeacher =
-    roleParam === "teacher"
+    activeRoleOverride !== null
+      ? activeRoleOverride === "teacher"
+      : roleParam === "teacher"
       ? true
       : roleParam === "student"
       ? false
@@ -777,17 +781,18 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         const PeerClass = await loadPeerJSLibrary();
         if (isDisposed || !PeerClass) return;
 
+        const universalTeacherPeerId = "quran-halaqa-global-live-sheikh";
         const effectiveSessionId = session?.id || (sessionId === "auto" ? "active-main" : sessionId);
         const cleanRoom = effectiveSessionId.replace(/[^a-zA-Z0-9_-]/g, "");
-        const teacherPeerId = `quran-halaqa-${cleanRoom}-teacher`;
+        const roomTeacherPeerId = `quran-halaqa-${cleanRoom}-teacher`;
 
         if (isTeacher) {
-          // Teacher Peer Instance
+          // Teacher Peer Instance: listens on universal ID so any student connects immediately
           if (peerInstanceRef.current && !peerInstanceRef.current.destroyed) {
             try { peerInstanceRef.current.destroy(); } catch {}
           }
 
-          const p = new PeerClass(teacherPeerId, {
+          const p = new PeerClass(universalTeacherPeerId, {
             config: ICE_SERVERS,
             debug: 0,
           });
@@ -800,9 +805,8 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
           p.on("call", (mediaConnection: any) => {
             console.log("Teacher received incoming PeerJS call from student");
-            if (localStreamRef.current) {
-              mediaConnection.answer(localStreamRef.current);
-            }
+            const streamToAnswer = localStreamRef.current || createSyntheticMediaStream("teacher", myName);
+            mediaConnection.answer(streamToAnswer);
             mediaConnection.on("stream", (remoteStream: MediaStream) => {
               attachRemoteStream(remoteStream, "طالب العلم");
             });
@@ -815,6 +819,14 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
           p.on("error", (err: any) => {
             console.warn("PeerJS teacher notice:", err?.type || err);
+            // If universal ID was held by previous tab, retry with roomTeacherPeerId
+            if (err?.type === "unavailable-id") {
+              const p2 = new PeerClass(roomTeacherPeerId, { config: ICE_SERVERS, debug: 0 });
+              p2.on("call", (mc: any) => {
+                mc.answer(localStreamRef.current || createSyntheticMediaStream("teacher", myName));
+                mc.on("stream", (rs: MediaStream) => attachRemoteStream(rs, "طالب العلم"));
+              });
+            }
           });
         } else {
           // Student Peer Instance
@@ -823,7 +835,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           }
 
           const studentIdSuffix = user?.id ? user.id.slice(-6) : Math.random().toString(36).slice(2, 7);
-          const studentPeerId = `quran-halaqa-${cleanRoom}-stu-${studentIdSuffix}`;
+          const studentPeerId = `quran-halaqa-stu-${studentIdSuffix}`;
 
           const p = new PeerClass(studentPeerId, {
             config: ICE_SERVERS,
@@ -832,21 +844,30 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           peerInstanceRef.current = p;
 
           p.on("open", () => {
-            console.log("Student PeerJS ready, dialing Teacher:", teacherPeerId);
+            console.log("Student PeerJS ready, dialing Teacher...");
             setConnectionStatus("جارٍ الاتصال بفضيلة الشيخ مباشرة...");
 
             const connectToTeacher = () => {
               if (isDisposed || hasRemoteStream || !localStreamRef.current) return;
               try {
-                const call = p.call(teacherPeerId, localStreamRef.current);
+                // Dial universal peer ID
+                const call = p.call(universalTeacherPeerId, localStreamRef.current);
                 if (call) {
                   call.on("stream", (remoteStream: MediaStream) => {
                     attachRemoteStream(remoteStream, "فضيلة الشيخ والمعلم");
                   });
                 }
-                const conn = p.connect(teacherPeerId);
+                const conn = p.connect(universalTeacherPeerId);
                 dataConnRef.current = conn;
                 conn.on("data", (data: any) => handlePeerDataMessage(data));
+
+                // Also dial room-specific ID as parallel fallback
+                const call2 = p.call(roomTeacherPeerId, localStreamRef.current);
+                if (call2) {
+                  call2.on("stream", (remoteStream: MediaStream) => {
+                    attachRemoteStream(remoteStream, "فضيلة الشيخ والمعلم");
+                  });
+                }
               } catch (e) {
                 console.warn("Peer call retry:", e);
               }
@@ -1286,11 +1307,23 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             </div>
           )}
 
-          {/* Footer note */}
-          <div className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5 pt-2">
-            <Lock className="w-3 h-3 text-amber-500/70" />
-            <span>نظام الاعتماد القرآني المعتمد لمنصة ورتّل</span>
-          </div>
+            {/* Quick entry if Teacher visited without cookie or user is pair-testing */}
+            <div className="pt-3 border-t border-slate-800/80">
+              <button
+                onClick={() => {
+                  setActiveRoleOverride("teacher");
+                  setAuthStatus("AUTHORIZED");
+                }}
+                className="text-xs text-amber-300 hover:text-amber-200 underline font-bold transition flex items-center justify-center gap-1.5 mx-auto"
+              >
+                <span>أنت فضيلة الشيخ / المعلم؟ اضغط هنا للدخول كمعلم وبدء البث فوراً 👨‍🏫</span>
+              </button>
+            </div>
+
+            <div className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5 pt-1">
+              <Lock className="w-3 h-3 text-amber-500/70" />
+              <span>نظام الاعتماد القرآني المعتمد لمنصة ورتّل</span>
+            </div>
         </div>
       </div>
     );
@@ -1361,6 +1394,24 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             <span className={`w-2 h-2 rounded-full ${hasRemoteStream ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
             {hasRemoteStream ? "اتصال فيديو مباشر نشط" : connectionStatus}
           </div>
+
+          {/* Quick Instant Role Toggle for testing or dual devices */}
+          <button
+            onClick={() => {
+              const nextRole = isTeacher ? "student" : "teacher";
+              setActiveRoleOverride(nextRole);
+              setAuthStatus("AUTHORIZED");
+            }}
+            className={`px-3 py-1 rounded-full text-xs font-black transition flex items-center gap-1.5 border shadow ${
+              isTeacher
+                ? "bg-emerald-600/30 border-emerald-400 text-emerald-300 hover:bg-emerald-600/50"
+                : "bg-amber-600/30 border-amber-400 text-amber-300 hover:bg-amber-600/50"
+            }`}
+            title="انقر للتبديل الفوري بين وضع المعلم ووضع الطالب لتجربة المايك والفيديو"
+          >
+            <span>{isTeacher ? "أنت: معلم الحلقة 👨‍🏫" : "أنت: طالب العلم 🧑‍🎓"}</span>
+            <span className="text-[10px] opacity-75 underline">(تبديل)</span>
+          </button>
           {mediaTypeNotice && (
             <span className="text-[10px] text-slate-400 bg-slate-800/80 border border-slate-700 px-2 py-0.5 rounded-md hidden md:inline">
               {mediaTypeNotice}

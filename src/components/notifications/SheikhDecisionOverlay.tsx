@@ -46,7 +46,8 @@ export function SheikhDecisionOverlay() {
   const { user } = useAuth();
   const { lastEvent } = useRealtime();
 
-  const isTeacherOrAdmin = user?.role === "TEACHER" || user?.role === "ADMIN";
+  const isTeacherPath = typeof window !== "undefined" && window.location.pathname.startsWith("/teacher");
+  const isTeacherOrAdmin = user?.role === "TEACHER" || user?.role === "ADMIN" || isTeacherPath;
 
   const [queue, setQueue] = useState<DecisionItem[]>([]);
   const [activeItem, setActiveItem] = useState<DecisionItem | null>(null);

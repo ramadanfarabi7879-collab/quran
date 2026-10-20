@@ -24,7 +24,8 @@ interface StudentNotification {
 
 export function StudentDecisionOverlay() {
   const { user } = useAuth();
-  const isStudent = user?.role === "STUDENT";
+  const isStudentPath = typeof window !== "undefined" && (window.location.pathname.startsWith("/student") || window.location.pathname.startsWith("/register") || window.location.pathname === "/");
+  const isStudent = user?.role === "STUDENT" || isStudentPath;
 
   const [activeNotification, setActiveNotification] = useState<StudentNotification | null>(null);
   const seenIdsRef = React.useRef<Set<string>>(new Set());
