@@ -445,19 +445,19 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     }
   };
 
-  // Auto-record student attendance check-in ONLY when student is authorized
+  // Auto-record student attendance check-in ONLY when an active session exists and student is authorized
   useEffect(() => {
-    if (!isTeacher && authStatus === "AUTHORIZED") {
+    if (!isTeacher && authStatus === "AUTHORIZED" && session?.id && session?.status === "ACTIVE") {
       fetch("/api/teacher/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "STUDENT_CHECKIN",
-          sessionId,
+          sessionId: session.id,
         }),
       }).catch(console.error);
     }
-  }, [sessionId, isTeacher, authStatus]);
+  }, [sessionId, isTeacher, authStatus, session?.id, session?.status]);
 
   // Helper to load PeerJS from unpkg CDN
   const loadPeerJSLibrary = (): Promise<any> => {
@@ -1211,6 +1211,40 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center min-h-[50vh] gap-3">
         <Radio className="w-8 h-8 text-emerald-500 animate-spin" />
         <p className="text-sm font-bold">جارٍ التحقق من تصريح القبول والاعتماد من الشيخ...</p>
+      </div>
+    );
+  }
+
+  // If a student joined a classroom where no live session is currently active
+  if (!isTeacher && (!session || session?.status !== "ACTIVE")) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full text-center space-y-5 text-white shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto border border-amber-400/20">
+            <Radio className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-xl font-black text-white">لا توجد حلقة منعقدة حالياً</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              لم يبدأ فضيلة الشيخ بث الحلقة بعد. سيظهر إشعار فوري وتنبيه في لوحة التحكم عند بدء انعقاد الجلسة.
+            </p>
+          </div>
+          <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
+            <button
+              onClick={fetchSession}
+              className="px-5 py-2.5 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 transition flex items-center justify-center gap-1.5"
+            >
+              <RefreshCw className="w-4 h-4" />
+              تحديث
+            </button>
+            <Link
+              href="/student/dashboard"
+              className="px-5 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 transition text-center"
+            >
+              العودة للوحة الطالب
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }

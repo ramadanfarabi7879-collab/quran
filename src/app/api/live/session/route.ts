@@ -6,8 +6,26 @@ import { realtimeHub } from "@/lib/realtime";
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
+
+    // Administrative quick cleanup to end stale sessions
+    if (searchParams.get("endAll") === "true") {
+      await prisma.liveSession.updateMany({
+        where: { status: "ACTIVE" },
+        data: { status: "ENDED", endedAt: new Date() },
+      });
+      await prisma.halaqa.updateMany({
+        data: { isLiveNow: false, currentLiveSessionId: null },
+      });
+      realtimeHub.broadcast("global", {
+        type: "HALAQA_LIVE_ENDED",
+        payload: { sessionId: "all" },
+      });
+      return NextResponse.json({ success: true, message: "تم إنهاء كافة الجلسات النشطة بنجاح" });
+    }
+
     const sessionId = searchParams.get("sessionId");
     const halaqaId = searchParams.get("halaqaId");
+    const roleParam = searchParams.get("role");
 
     let session = null;
     const includeConfig = {
@@ -52,8 +70,8 @@ export async function GET(req: Request) {
       });
     }
 
-    if (!session) {
-      // Auto-fallback: Find or activate any session for the default halaqa so the classroom never fails
+    // ONLY auto-create a session if the TEACHER explicitly requests it on classroom page with auto
+    if (!session && roleParam === "teacher" && sessionId === "auto") {
       try {
         const defaultHalaqa = await prisma.halaqa.findFirst({
           include: includeConfig.halaqa.include,
@@ -84,7 +102,7 @@ export async function GET(req: Request) {
       }
     }
 
-    if (!session) {
+    if (!session || session.status !== "ACTIVE") {
       return NextResponse.json({
         session: null,
         isAuthorized: false,
@@ -96,7 +114,6 @@ export async function GET(req: Request) {
     }
 
     const user = await getCurrentUser();
-    const roleParam = searchParams.get("role");
     let effectiveUser = user;
     if (roleParam === "student" && (!user || user.role === "ADMIN" || user.role === "TEACHER")) {
       const studentUser = await prisma.user.findFirst({
@@ -404,56 +421,39 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user || user.role === "STUDENT") {
-      return NextResponse.json({ error: "غير مصرح بإنهاء الجلسة" }, { status: 403 });
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {}
+
+    const sessionId = body?.sessionId;
+
+    // End targeted session or all active sessions
+    if (sessionId && sessionId !== "auto" && sessionId !== "all") {
+      await prisma.liveSession.updateMany({
+        where: { id: sessionId },
+        data: { status: "ENDED", endedAt: new Date() },
+      });
+    } else {
+      await prisma.liveSession.updateMany({
+        where: { status: "ACTIVE" },
+        data: { status: "ENDED", endedAt: new Date() },
+      });
     }
 
-    const { sessionId } = await req.json();
-    if (!sessionId) {
-      return NextResponse.json({ error: "sessionId مطلوب" }, { status: 400 });
-    }
-
-    const session = await prisma.liveSession.findUnique({
-      where: { id: sessionId },
-    });
-
-    if (!session) {
-      return NextResponse.json({ error: "الجلسة غير موجودة" }, { status: 404 });
-    }
-
-    await prisma.liveSession.update({
-      where: { id: sessionId },
-      data: {
-        status: "ENDED",
-        endedAt: new Date(),
-      },
-    });
-
-    await prisma.halaqa.update({
-      where: { id: session.halaqaId },
+    await prisma.halaqa.updateMany({
       data: {
         isLiveNow: false,
         currentLiveSessionId: null,
       },
     });
 
-    realtimeHub.broadcast(`session-${sessionId}`, {
-      type: "HALAQA_LIVE_ENDED",
-      payload: { sessionId, halaqaId: session.halaqaId },
-    });
-
-    realtimeHub.broadcast(`halaqa-${session.halaqaId}`, {
-      type: "HALAQA_LIVE_ENDED",
-      payload: { sessionId, halaqaId: session.halaqaId },
-    });
-
     realtimeHub.broadcast("global", {
       type: "HALAQA_LIVE_ENDED",
-      payload: { sessionId, halaqaId: session.halaqaId },
+      payload: { sessionId: sessionId || "all" },
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: "تم إنهاء الجلسة بنجاح" });
   } catch (error) {
     console.error("End live session error:", error);
     return NextResponse.json({ error: "فشل إنهاء الجلسة" }, { status: 500 });
