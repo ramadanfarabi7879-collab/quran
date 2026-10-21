@@ -260,6 +260,7 @@ model LibraryBook {
   coverUrl           String?
   description        String?
   pagesCount         Int          @default(10)
+  fileSizeBytes      Int?         @default(0)
   uploadedBy         String
   createdAt          DateTime     @default(now())
 
@@ -284,6 +285,7 @@ model SessionRecording {
   halaqa               Halaqa      @relation(fields: [halaqaId], references: [id], onDelete: Cascade)
   title                String
   videoUrl             String
+  recordingType        String      @default("AUDIO_VIDEO") // AUDIO_VIDEO, AUDIO_ONLY
   durationSeconds      Int         @default(3600)
   fileSizeBytes        Int         @default(150000000)
   retentionDays        Int         @default(30)

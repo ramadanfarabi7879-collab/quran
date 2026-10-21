@@ -121,6 +121,13 @@ export default function StudentLibraryPage() {
                     <span className="absolute top-2 right-2 bg-islamic-900/80 backdrop-blur text-gold-accent text-[10px] font-bold px-2.5 py-1 rounded-lg">
                       {b.category}
                     </span>
+                    {b.fileSizeBytes && b.fileSizeBytes > 0 && (
+                      <span className="absolute bottom-2 left-2 bg-slate-900/80 backdrop-blur text-slate-200 text-[10px] font-mono px-2 py-0.5 rounded-md">
+                        {b.fileSizeBytes >= 1024 * 1024
+                          ? `${(b.fileSizeBytes / (1024 * 1024)).toFixed(1)} ميجابايت`
+                          : `${(b.fileSizeBytes / 1024).toFixed(0)} كيلوبايت`}
+                      </span>
+                    )}
                   </div>
                   <div className="p-4 space-y-1.5">
                     <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 line-clamp-1">

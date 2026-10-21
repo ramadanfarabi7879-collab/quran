@@ -163,6 +163,27 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [activeTab, setActiveTab] = useState<"MUSHAF" | "CHAT" | "PARTICIPANTS">("MUSHAF");
 
+  // Student Microphone Permission Request System
+  const [canSpeak, setCanSpeak] = useState(false);
+  const [speakRequestStatus, setSpeakRequestStatus] = useState<"IDLE" | "REQUESTED" | "GRANTED" | "REJECTED">("IDLE");
+  const [pendingSpeakRequests, setPendingSpeakRequests] = useState<Array<{ studentId: string; studentName: string }>>([]);
+  const [speakNotice, setSpeakNotice] = useState<string | null>(null);
+
+  // Session Recording System
+  const [showRecordingModal, setShowRecordingModal] = useState(false);
+  const [selectedRecordingType, setSelectedRecordingType] = useState<"AUDIO_VIDEO" | "AUDIO_ONLY">("AUDIO_VIDEO");
+  const [activeRecordingType, setActiveRecordingType] = useState<"AUDIO_VIDEO" | "AUDIO_ONLY">("AUDIO_VIDEO");
+  const [isUploadingRecording, setIsUploadingRecording] = useState(false);
+  const [remoteIsRecording, setRemoteIsRecording] = useState(false);
+
+  // Recording engine refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const recordingAnimRef = useRef<number | null>(null);
+  const recordingAudioCtxRef = useRef<AudioContext | null>(null);
+
   // Hardware status
   const [hasRealMic, setHasRealMic] = useState(false);
   const [hasRealCam, setHasRealCam] = useState(false);
@@ -604,7 +625,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     // Build the actual MediaStream with real hardware tracks only (NO fake audio oscillators)
     const newStream = new MediaStream();
     if (micTrack) {
-      micTrack.enabled = isMicOn;
+      micTrack.enabled = isTeacher ? isMicOn : (canSpeak && isMicOn);
       newStream.addTrack(micTrack);
     }
     if (camTrack) {
@@ -798,6 +819,51 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
               });
             }
           }
+        } else if (signalType === "SPEAK_REQUEST" && data) {
+          if (isTeacher) {
+            const reqStudentId = data.studentId || senderClientId;
+            const reqStudentName = data.studentName || senderName || "طالب العلم";
+            setPendingSpeakRequests((prev) => {
+              if (prev.some((r) => r.studentId === reqStudentId)) return prev;
+              return [...prev, { studentId: reqStudentId, studentName: reqStudentName }];
+            });
+            playTeacherJoinAlertSound();
+          }
+        } else if (signalType === "SPEAK_DECISION" && data) {
+          if (!isTeacher) {
+            if (data.targetClientId && data.targetClientId !== clientId) return;
+            if (data.granted) {
+              setCanSpeak(true);
+              setSpeakRequestStatus("GRANTED");
+              setSpeakNotice("منحك فضيلة الشيخ إذن التحدث بالميكروفون 🎙️ - يمكنك الآن تشغيل المايك");
+              playStudentApprovedSound();
+              setTimeout(() => setSpeakNotice(null), 7000);
+            } else {
+              setCanSpeak(false);
+              setSpeakRequestStatus("REJECTED");
+              setSpeakNotice("اعتذر فضيلة الشيخ عن منح إذن التحدث حالياً.");
+              setTimeout(() => setSpeakNotice(null), 5000);
+            }
+          }
+        } else if (signalType === "SPEAK_REVOKED" && data) {
+          if (!isTeacher) {
+            if (data.targetClientId && data.targetClientId !== clientId) return;
+            setCanSpeak(false);
+            setIsMicOn(false);
+            setSpeakRequestStatus("IDLE");
+            if (localStreamRef.current) {
+              localStreamRef.current.getAudioTracks().forEach((track) => {
+                track.enabled = false;
+              });
+            }
+            setSpeakNotice("قام فضيلة الشيخ بسحب إذن التحدث وكتم الميكروفون.");
+            setTimeout(() => setSpeakNotice(null), 5000);
+          }
+        } else if (signalType === "RECORDING_STATE" && data) {
+          setRemoteIsRecording(Boolean(data.isRecording));
+          if (data.recordingType) {
+            setActiveRecordingType(data.recordingType);
+          }
         }
       } catch (err) {
         console.error("Signal handle error:", err);
@@ -903,6 +969,10 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   }, [isRecording]);
 
   const toggleMic = () => {
+    if (!isTeacher && !canSpeak) {
+      alert("الميكروفون مقفل حالياً. يرجى الضغط على زر «طلب التحدث ✋» لطلب الإذن من فضيلة الشيخ أولاً.");
+      return;
+    }
     const next = !isMicOn;
     setIsMicOn(next);
     if (localStreamRef.current) {
@@ -911,6 +981,266 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       });
     }
     sendSignalingMessage("MEDIA_STATE", { mic: next, video: isVideoOn });
+  };
+
+  const handleRequestToSpeak = async () => {
+    if (speakRequestStatus === "REQUESTED") return;
+    setSpeakRequestStatus("REQUESTED");
+    setSpeakNotice("تم إرسال طلب التحدث لفضيلة الشيخ... بانتظار الإذن ⏳");
+    await sendSignalingMessage("SPEAK_REQUEST", {
+      studentId: clientId,
+      studentName: myName,
+    });
+  };
+
+  const handleTeacherGrantSpeak = async (studentClientId: string) => {
+    setPendingSpeakRequests((prev) => prev.filter((r) => r.studentId !== studentClientId));
+    await sendSignalingMessage("SPEAK_DECISION", {
+      targetClientId: studentClientId,
+      granted: true,
+    });
+  };
+
+  const handleTeacherRejectSpeak = async (studentClientId: string) => {
+    setPendingSpeakRequests((prev) => prev.filter((r) => r.studentId !== studentClientId));
+    await sendSignalingMessage("SPEAK_DECISION", {
+      targetClientId: studentClientId,
+      granted: false,
+    });
+  };
+
+  const handleTeacherRevokeSpeak = async (targetId?: string) => {
+    const target = targetId || remoteClientIdRef.current;
+    await sendSignalingMessage("SPEAK_REVOKED", {
+      targetClientId: target,
+    });
+    alert("تم سحب إذن التحدث وكتم صوت الطالب بنجاح.");
+  };
+
+  const startRealRecording = async (type: "AUDIO_VIDEO" | "AUDIO_ONLY") => {
+    if (typeof window === "undefined" || !(window as any).MediaRecorder) {
+      alert("عذراً، متصفحك لا يدعم تسجيل الوسائط MediaRecorder.");
+      return;
+    }
+
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+      recordingAudioCtxRef.current = audioCtx;
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
+      const audioDest = audioCtx.createMediaStreamDestination();
+
+      if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
+        try {
+          const localSrc = audioCtx.createMediaStreamSource(
+            new MediaStream([localStreamRef.current.getAudioTracks()[0]])
+          );
+          localSrc.connect(audioDest);
+        } catch (e) {
+          console.warn("Could not attach local audio to recording mixer:", e);
+        }
+      }
+
+      if (remoteStreamRef.current && remoteStreamRef.current.getAudioTracks().length > 0) {
+        try {
+          const remoteSrc = audioCtx.createMediaStreamSource(
+            new MediaStream([remoteStreamRef.current.getAudioTracks()[0]])
+          );
+          remoteSrc.connect(audioDest);
+        } catch (e) {
+          console.warn("Could not attach remote audio to recording mixer:", e);
+        }
+      }
+
+      let combinedStream: MediaStream;
+      let chosenMime = "";
+
+      if (type === "AUDIO_VIDEO") {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1280;
+        canvas.height = 720;
+        const ctx = canvas.getContext("2d");
+        recordingCanvasRef.current = canvas;
+
+        const drawLoop = () => {
+          if (!ctx) return;
+          ctx.fillStyle = "#090d16";
+          ctx.fillRect(0, 0, 1280, 720);
+
+          const localVid = localVideoRef.current;
+          const remoteVid = remoteVideoRef.current;
+          const hasLocal = localVid && localVid.readyState >= 2 && !localVid.paused;
+          const hasRemote = remoteVid && remoteVid.readyState >= 2 && !remoteVid.paused;
+
+          if (hasLocal && hasRemote) {
+            ctx.drawImage(localVid, 650, 60, 610, 580);
+            ctx.drawImage(remoteVid, 20, 60, 610, 580);
+
+            ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+            ctx.fillRect(650, 600, 610, 40);
+            ctx.fillRect(20, 600, 610, 40);
+            ctx.font = "bold 20px Cairo, sans-serif";
+            ctx.fillStyle = "#facc15";
+            ctx.textAlign = "right";
+            ctx.fillText(myName || "معلم الحلقة", 1240, 628);
+            ctx.fillText(remotePeerName || "طالب العلم", 610, 628);
+          } else if (hasLocal) {
+            ctx.drawImage(localVid, 160, 60, 960, 600);
+            ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+            ctx.fillRect(160, 620, 960, 40);
+            ctx.font = "bold 20px Cairo, sans-serif";
+            ctx.fillStyle = "#facc15";
+            ctx.textAlign = "right";
+            ctx.fillText(myName || "معلم الحلقة", 1100, 648);
+          } else if (hasRemote) {
+            ctx.drawImage(remoteVid, 160, 60, 960, 600);
+            ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+            ctx.fillRect(160, 620, 960, 40);
+            ctx.font = "bold 20px Cairo, sans-serif";
+            ctx.fillStyle = "#facc15";
+            ctx.textAlign = "right";
+            ctx.fillText(remotePeerName || "طالب العلم", 1100, 648);
+          } else {
+            ctx.fillStyle = "#1e293b";
+            ctx.fillRect(100, 80, 1080, 560);
+            ctx.font = "bold 30px Cairo, sans-serif";
+            ctx.fillStyle = "#f8fafc";
+            ctx.textAlign = "center";
+            ctx.fillText("جلسة تحفيظ وتجويد القرآن الكريم", 640, 340);
+            ctx.font = "18px Cairo, sans-serif";
+            ctx.fillStyle = "#94a3b8";
+            ctx.fillText(session?.title || "منصة ورتّل القرآنية", 640, 390);
+          }
+
+          ctx.fillStyle = "rgba(6, 78, 59, 0.9)";
+          ctx.fillRect(0, 0, 1280, 50);
+          ctx.font = "bold 20px Cairo, sans-serif";
+          ctx.fillStyle = "#ffffff";
+          ctx.textAlign = "right";
+          ctx.fillText("منصة ورتّل - جلسة تحفيظ وتجويد القرآن الكريم", 1250, 32);
+
+          ctx.fillStyle = "#ef4444";
+          ctx.beginPath();
+          ctx.arc(35, 25, 7, 0, 2 * Math.PI);
+          ctx.fill();
+          ctx.font = "bold 14px Cairo, sans-serif";
+          ctx.fillStyle = "#ffffff";
+          ctx.textAlign = "left";
+          ctx.fillText("تسجيل مباشر (صوت وصورة)", 50, 30);
+
+          recordingAnimRef.current = requestAnimationFrame(drawLoop);
+        };
+
+        drawLoop();
+        const canvasStream = canvas.captureStream(25);
+        combinedStream = new MediaStream([
+          ...canvasStream.getVideoTracks(),
+          ...audioDest.stream.getAudioTracks(),
+        ]);
+
+        const videoMimes = [
+          "video/webm;codecs=vp8,opus",
+          "video/webm;codecs=vp9,opus",
+          "video/webm;codecs=h264,opus",
+          "video/webm",
+        ];
+        chosenMime = videoMimes.find((m) => MediaRecorder.isTypeSupported(m)) || "";
+      } else {
+        combinedStream = new MediaStream([
+          ...audioDest.stream.getAudioTracks(),
+        ]);
+        const audioMimes = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/ogg;codecs=opus",
+        ];
+        chosenMime = audioMimes.find((m) => MediaRecorder.isTypeSupported(m)) || "";
+      }
+
+      recordingStreamRef.current = combinedStream;
+      recordingChunksRef.current = [];
+
+      const recorder = new MediaRecorder(combinedStream, {
+        mimeType: chosenMime || undefined,
+      });
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          recordingChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        try {
+          setIsUploadingRecording(true);
+          const blob = new Blob(recordingChunksRef.current, {
+            type: chosenMime || (type === "AUDIO_ONLY" ? "audio/webm" : "video/webm"),
+          });
+
+          const ext = "webm";
+          const fileName = `rec_${sessionId}_${Date.now()}.${ext}`;
+
+          const formData = new FormData();
+          formData.append("file", blob, fileName);
+          formData.append("sessionId", sessionId);
+          formData.append("halaqaId", session?.halaqaId || session?.halaqa?.id || "");
+          formData.append(
+            "title",
+            `تسجيل ${session?.title || "الحلقة"} (${type === "AUDIO_ONLY" ? "صوت فقط" : "صوت وصورة"})`
+          );
+          formData.append("durationSeconds", String(recordSeconds));
+          formData.append("recordingType", type);
+
+          const res = await fetch("/api/recordings", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (res.ok) {
+            alert("تم حفظ ورفع التسجيل بنجاح في مكتبة التسجيلات!");
+          } else {
+            const errD = await res.json().catch(() => ({}));
+            alert(errD.error || "حدث خطأ أثناء حفظ التسجيل");
+          }
+        } catch (uploadErr) {
+          console.error("Recording upload error:", uploadErr);
+          alert("تعذر رفع التسجيل إلى الخادم");
+        } finally {
+          setIsUploadingRecording(false);
+          setRecordSeconds(0);
+          setIsRecording(false);
+        }
+      };
+
+      recorder.start(1000);
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setActiveRecordingType(type);
+      setShowRecordingModal(false);
+      sendSignalingMessage("RECORDING_STATE", { isRecording: true, recordingType: type });
+    } catch (err: any) {
+      console.error("Failed to start recording:", err);
+      alert(`تعذر بدء التسجيل: ${err?.message || "خطأ غير معروف"}`);
+    }
+  };
+
+  const stopRealRecording = () => {
+    if (recordingAnimRef.current) {
+      cancelAnimationFrame(recordingAnimRef.current);
+      recordingAnimRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingStreamRef.current) {
+      recordingStreamRef.current.getTracks().forEach((t) => t.stop());
+    }
+    if (recordingAudioCtxRef.current) {
+      recordingAudioCtxRef.current.close().catch(() => {});
+    }
+    sendSignalingMessage("RECORDING_STATE", { isRecording: false });
   };
 
   const toggleVideo = () => {
@@ -972,27 +1302,6 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const handleTeacherMuteStudent = async () => {
     await sendSignalingMessage("REMOTE_MUTE", { target: "student" });
     alert("تم إرسال أمر كتم صوت الطالب بنجاح.");
-  };
-
-  const handleToggleRecording = async () => {
-    if (isRecording) {
-      await fetch("/api/recordings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          halaqaId: session?.halaqaId,
-          title: `تسجيل ${session?.title || "الحلقة"}`,
-          durationSeconds: recordSeconds,
-          retentionDays: 30,
-        }),
-      });
-      alert("تم إيقاف التسجيل وحفظه في مكتبة التسجيلات بنجاح.");
-      setIsRecording(false);
-      setRecordSeconds(0);
-    } else {
-      setIsRecording(true);
-    }
   };
 
   if (loading || authStatus === "CHECKING") {
@@ -1070,6 +1379,56 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Teacher Speak Requests Floating Bar */}
+      {isTeacher && pendingSpeakRequests.length > 0 && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 max-w-lg w-[95%] animate-in slide-in-from-top duration-200">
+          <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 text-white rounded-2xl p-3.5 shadow-2xl border-2 border-amber-500/90 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-black">
+                <Hand className="w-5 h-5 animate-bounce" />
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-black text-amber-300 block">طلب الإذن بالتحدث بالميكروفون</span>
+                <span className="text-xs font-bold text-white block">
+                  الطالب <strong className="text-amber-300">{pendingSpeakRequests[0].studentName}</strong> يطلب التحدث
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleTeacherGrantSpeak(pendingSpeakRequests[0].studentId)}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-3.5 py-1.5 rounded-xl shadow transition flex items-center gap-1 active:scale-95"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                منح الإذن ✅
+              </button>
+              <button
+                onClick={() => handleTeacherRejectSpeak(pendingSpeakRequests[0].studentId)}
+                className="bg-slate-800 hover:bg-red-900 text-slate-300 hover:text-white font-bold text-xs px-3 py-1.5 rounded-xl transition border border-slate-700"
+              >
+                رفض ❌
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Speak Notice Banner */}
+      {!isTeacher && speakNotice && (
+        <div className="bg-emerald-950/95 border-b border-emerald-500/60 px-4 py-2.5 text-emerald-200 text-xs font-bold flex items-center justify-between gap-2 z-40 backdrop-blur-md animate-in slide-in-from-top-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+            <span>{speakNotice}</span>
+          </div>
+          <button
+            onClick={() => setSpeakNotice(null)}
+            className="p-1 text-slate-400 hover:text-white rounded-lg"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
@@ -1186,13 +1545,19 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
         {/* Recording Indicator & Mobile Tabs */}
         <div className="flex items-center gap-3">
-          {isRecording && (
-            <div className="flex items-center gap-2 bg-red-950/80 border border-red-700/60 text-red-300 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+          {(isRecording || remoteIsRecording) && (
+            <div className="flex items-center gap-2 bg-red-950/90 border border-red-600 text-red-200 px-3 py-1 rounded-full text-xs font-bold animate-pulse shadow-lg">
               <Circle className="w-2.5 h-2.5 fill-red-500 text-red-500" />
-              <span>تسجيل جارٍ</span>
-              <span className="font-mono">
-                {Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, "0")}
+              <span>
+                {isRecording
+                  ? `تسجيل نشط: ${activeRecordingType === "AUDIO_ONLY" ? "صوت فقط 🎙️" : "صوت وصورة 🎥"}`
+                  : "المعلم يسجل الجلسة حالياً 🔴"}
               </span>
+              {isRecording && (
+                <span className="font-mono bg-red-900/80 px-1.5 py-0.5 rounded text-[11px] text-white">
+                  {Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, "0")}
+                </span>
+              )}
             </div>
           )}
 
@@ -1406,6 +1771,17 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                   <Hand className="w-2.5 h-2.5" /> اليد مرفوعة
                 </div>
               )}
+
+              {isTeacher && hasRemoteStream && (
+                <button
+                  onClick={() => handleTeacherRevokeSpeak()}
+                  className="absolute top-1 left-1 bg-red-950/90 hover:bg-red-800 text-red-200 border border-red-700/80 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition shadow cursor-pointer active:scale-95 z-20"
+                  title="سحب إذن التحدث وكتم ميكروفون الطالب فوراً"
+                >
+                  <VolumeX className="w-3 h-3 text-red-400" />
+                  <span>كتم / سحب الإذن</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1541,20 +1917,33 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         <div className="flex items-center gap-2">
           <button
             onClick={toggleMic}
-            className={`p-2.5 sm:p-3 rounded-xl transition cursor-pointer ${
-              isMicOn && hasRealMic
+            className={`p-2.5 sm:p-3 rounded-xl transition cursor-pointer relative ${
+              !isTeacher && !canSpeak
+                ? "bg-slate-800 text-slate-500 border border-slate-700 hover:bg-slate-750"
+                : isMicOn && hasRealMic
                 ? "bg-slate-800 hover:bg-slate-700 text-slate-200"
                 : "bg-red-600 hover:bg-red-700 text-white"
             }`}
             title={
-              !hasRealMic
+              !isTeacher && !canSpeak
+                ? "الميكروفون مقفل - اطلب إذن التحدث من الشيخ"
+                : !hasRealMic
                 ? "الميكروفون غير متوفر"
                 : isMicOn
                 ? "كتم الميكروفون"
                 : "تشغيل الميكروفون"
             }
           >
-            {isMicOn && hasRealMic ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+            {!isTeacher && !canSpeak ? (
+              <div className="relative">
+                <MicOff className="w-4 h-4 text-slate-400" />
+                <Lock className="w-2.5 h-2.5 absolute -top-1 -right-1 text-amber-400" />
+              </div>
+            ) : isMicOn && hasRealMic ? (
+              <Mic className="w-4 h-4" />
+            ) : (
+              <MicOff className="w-4 h-4" />
+            )}
           </button>
 
           <button
@@ -1588,33 +1977,81 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           </button>
         </div>
 
-        {/* Center: Actions (Raise hand, recording) */}
+        {/* Center: Actions (Raise hand, speaking permission, recording) */}
         <div className="flex items-center gap-2">
           {!isTeacher && (
-            <button
-              onClick={toggleHandRaise}
-              className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                isHandRaised
-                  ? "bg-amber-500 text-slate-950 shadow-lg"
-                  : "bg-slate-800 hover:bg-slate-700 text-slate-200"
-              }`}
-            >
-              <Hand className="w-3.5 h-3.5" />
-              <span>{isHandRaised ? "خفض اليد" : "رفع اليد"}</span>
-            </button>
+            <>
+              {!canSpeak ? (
+                speakRequestStatus === "REQUESTED" ? (
+                  <button
+                    disabled
+                    className="flex items-center gap-1.5 px-3.5 py-2 sm:py-2.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40"
+                  >
+                    <Clock className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                    <span>بانتظار إذن الشيخ... ⏳</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleRequestToSpeak}
+                    className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white shadow-lg transition active:scale-95 cursor-pointer"
+                  >
+                    <Hand className="w-3.5 h-3.5" />
+                    <span>طلب التحدث ✋</span>
+                  </button>
+                )
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/50">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>مأذون لك بالتحدث</span>
+                </div>
+              )}
+
+              <button
+                onClick={toggleHandRaise}
+                className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  isHandRaised
+                    ? "bg-amber-500 text-slate-950 shadow-lg"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-200"
+                }`}
+              >
+                <Hand className="w-3.5 h-3.5" />
+                <span>{isHandRaised ? "خفض اليد" : "رفع اليد"}</span>
+              </button>
+            </>
           )}
 
           {isTeacher && (
             <button
-              onClick={handleToggleRecording}
+              onClick={() => {
+                if (isRecording) {
+                  stopRealRecording();
+                } else {
+                  setShowRecordingModal(true);
+                }
+              }}
+              disabled={isUploadingRecording}
               className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                 isRecording
                   ? "bg-red-600 text-white hover:bg-red-700 shadow-lg animate-pulse"
                   : "bg-slate-800 hover:bg-slate-700 text-slate-200"
-              }`}
+              } disabled:opacity-50`}
             >
-              <Circle className={`w-3 h-3 ${isRecording ? "fill-white" : "fill-red-500 text-red-500"}`} />
-              <span>{isRecording ? "إيقاف التسجيل" : "بدء التسجيل"}</span>
+              {isUploadingRecording ? (
+                <>
+                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>جارٍ رفع التسجيل...</span>
+                </>
+              ) : isRecording ? (
+                <>
+                  <Circle className="w-3 h-3 fill-white" />
+                  <span>إيقاف التسجيل</span>
+                </>
+              ) : (
+                <>
+                  <Circle className="w-3 h-3 fill-red-500 text-red-500" />
+                  <span>بدء التسجيل</span>
+                </>
+              )}
             </button>
           )}
         </div>
@@ -1640,6 +2077,113 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           )}
         </div>
       </div>
+
+      {/* Teacher Recording Options Modal */}
+      {showRecordingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 text-right">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center">
+                  <Circle className="w-4 h-4 fill-red-500 text-red-500 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">بدء تسجيل الجلسة</h3>
+                  <p className="text-[11px] text-slate-400">اختر نوع التسجيل المطلوب لحفظ مجريات الحلقة</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowRecordingModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Option 1: Audio & Video */}
+              <div
+                onClick={() => setSelectedRecordingType("AUDIO_VIDEO")}
+                className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-center gap-3.5 ${
+                  selectedRecordingType === "AUDIO_VIDEO"
+                    ? "border-emerald-500 bg-emerald-500/10 text-white shadow-md shadow-emerald-500/10"
+                    : "border-slate-800 bg-slate-800/40 text-slate-300 hover:border-slate-700"
+                }`}
+              >
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    selectedRecordingType === "AUDIO_VIDEO"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-800 text-slate-400"
+                  }`}
+                >
+                  <Video className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-sm">تسجيل بالصوت والصورة</span>
+                    {selectedRecordingType === "AUDIO_VIDEO" && (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                    تسجيل مرئي كامل يدمج كاميرا المعلم والطالب مع دمج الصوت في ملف فيديو واحد.
+                  </p>
+                </div>
+              </div>
+
+              {/* Option 2: Audio Only */}
+              <div
+                onClick={() => setSelectedRecordingType("AUDIO_ONLY")}
+                className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-center gap-3.5 ${
+                  selectedRecordingType === "AUDIO_ONLY"
+                    ? "border-emerald-500 bg-emerald-500/10 text-white shadow-md shadow-emerald-500/10"
+                    : "border-slate-800 bg-slate-800/40 text-slate-300 hover:border-slate-700"
+                }`}
+              >
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    selectedRecordingType === "AUDIO_ONLY"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-800 text-slate-400"
+                  }`}
+                >
+                  <Mic className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-sm">تسجيل بالصوت فقط</span>
+                    {selectedRecordingType === "AUDIO_ONLY" && (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                    تسجيل صوتي عالي النقاوة للتلاوة والترتيل بدون فيديو بحجم ملف خفيف وسريع.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowRecordingModal(false)}
+                className="px-4 py-2 rounded-xl text-slate-400 hover:text-white font-bold text-xs"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => startRealRecording(selectedRecordingType)}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs flex items-center gap-2 shadow-lg active:scale-95"
+              >
+                <Circle className="w-3.5 h-3.5 fill-white text-white" />
+                <span>بدء التسجيل الآن 🔴</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

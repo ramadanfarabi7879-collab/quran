@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers/AppProviders";
-import { playStudentApprovedSound, playScheduleAlertSound } from "@/lib/sound";
+import { playStudentApprovedSound, playScheduleAlertSound, playHalaqaStartSound } from "@/lib/sound";
 import {
   Bell,
   CheckCircle2,
@@ -10,6 +10,8 @@ import {
   XCircle,
   X,
   ExternalLink,
+  Video,
+  Radio,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -30,6 +32,8 @@ const DECISION_TYPES = new Set([
   "REGISTRATION_REJECTED",
   "JOIN_REQUEST_DECIDED",
   "SESSION_REJECTED",
+  "HALAQA_STARTING",
+  "SESSION_STARTED",
 ]);
 
 export function StudentDecisionOverlay() {
@@ -38,6 +42,7 @@ export function StudentDecisionOverlay() {
   const isStudent = (user?.role !== "TEACHER" && user?.role !== "ADMIN" && !isTeacherPath);
 
   const [activeNotification, setActiveNotification] = useState<StudentNotification | null>(null);
+  const [joining, setJoining] = useState(false);
   const seenIdsRef = React.useRef<Set<string>>(new Set());
 
   // PeerJS Direct Instant Listener for Real-Time Sheikh Decisions (<50ms)
@@ -160,6 +165,8 @@ export function StudentDecisionOverlay() {
             playStudentApprovedSound();
           } else if (latest.type === "SCHEDULE_UPDATED") {
             playScheduleAlertSound();
+          } else if (latest.type === "HALAQA_STARTING" || latest.type === "SESSION_STARTED") {
+            playHalaqaStartSound();
           }
         }
       } catch {}
@@ -201,8 +208,48 @@ export function StudentDecisionOverlay() {
     } catch {}
   };
 
+  const handleAcceptLiveSession = async () => {
+    if (!activeNotification || joining) return;
+    setJoining(true);
+
+    try {
+      // Extract sessionId from notification link if available
+      let sessionId = "";
+      if (activeNotification.link) {
+        const match = activeNotification.link.match(/\/classroom\/([^/?]+)/);
+        if (match) sessionId = match[1];
+      }
+
+      // Mark acceptance in backend
+      await fetch("/api/student/join-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sessionId || "auto",
+          acceptInvitation: true,
+        }),
+      }).catch(() => {});
+
+      // Dismiss locally and in DB
+      await handleDismiss();
+
+      // Direct instant navigation to classroom!
+      const targetUrl = activeNotification.link || `/classroom/${sessionId}?role=student`;
+      window.location.href = targetUrl;
+    } catch (e) {
+      console.error(e);
+      // Fallback direct navigate
+      if (activeNotification.link) {
+        window.location.href = activeNotification.link;
+      }
+    } finally {
+      setJoining(false);
+    }
+  };
+
   if (!isStudent || !activeNotification) return null;
 
+  const isLiveStarting = activeNotification.type === "HALAQA_STARTING" || activeNotification.type === "SESSION_STARTED";
   const isApproved = activeNotification.type === "ACCOUNT_APPROVED" || activeNotification.type === "SESSION_APPROVED";
   const isRescheduled = activeNotification.type === "SCHEDULE_UPDATED";
   const isRejected = activeNotification.type === "REGISTRATION_REJECTED" || activeNotification.type === "SESSION_REJECTED";
@@ -211,7 +258,9 @@ export function StudentDecisionOverlay() {
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] w-[95%] max-w-md animate-in slide-in-from-top-6 duration-300 drop-shadow-2xl">
       <div
         className={`text-white rounded-3xl p-4 sm:p-5 border-2 shadow-[0_20px_50px_rgba(0,0,0,0.85)] relative overflow-hidden backdrop-blur-xl ${
-          isApproved
+          isLiveStarting
+            ? "bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-950 border-amber-400 ring-2 ring-amber-400/30"
+            : isApproved
             ? "bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-950 border-emerald-400"
             : isRescheduled
             ? "bg-gradient-to-br from-slate-950 via-amber-950 to-orange-950 border-amber-400"
@@ -224,12 +273,27 @@ export function StudentDecisionOverlay() {
           <div className="flex items-center gap-2">
             <span
               className={`w-2.5 h-2.5 rounded-full animate-ping ${
-                isApproved ? "bg-emerald-400" : isRescheduled ? "bg-amber-400" : "bg-red-400"
+                isLiveStarting
+                  ? "bg-red-500"
+                  : isApproved
+                  ? "bg-emerald-400"
+                  : isRescheduled
+                  ? "bg-amber-400"
+                  : "bg-red-400"
               }`}
             />
             <span className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 text-white">
-              <Bell className="w-3.5 h-3.5 text-amber-300" />
-              إشعار جديد من فضيلة الشيخ
+              {isLiveStarting ? (
+                <>
+                  <Radio className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+                  <span>دعوة لحضور الجلسة المباشرة الآن</span>
+                </>
+              ) : (
+                <>
+                  <Bell className="w-3.5 h-3.5 text-amber-300" />
+                  <span>إشعار جديد من فضيلة الشيخ</span>
+                </>
+              )}
             </span>
           </div>
 
@@ -246,14 +310,18 @@ export function StudentDecisionOverlay() {
           <div className="flex items-start gap-3">
             <div
               className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${
-                isApproved
+                isLiveStarting
+                  ? "bg-gradient-to-br from-amber-500 to-emerald-600 text-slate-950 font-black shadow-amber-500/20"
+                  : isApproved
                   ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
                   : isRescheduled
                   ? "bg-amber-500/20 text-amber-300 border border-amber-400/30"
                   : "bg-red-500/20 text-red-300 border border-red-400/30"
               }`}
             >
-              {isApproved ? (
+              {isLiveStarting ? (
+                <Video className="w-6 h-6 text-white" />
+              ) : isApproved ? (
                 <CheckCircle2 className="w-6 h-6 text-emerald-400" />
               ) : isRescheduled ? (
                 <Calendar className="w-6 h-6 text-amber-400" />
@@ -269,7 +337,16 @@ export function StudentDecisionOverlay() {
           </div>
 
           <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/10">
-            {activeNotification.link && (
+            {isLiveStarting ? (
+              <button
+                onClick={handleAcceptLiveSession}
+                disabled={joining}
+                className="px-5 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-amber-400 to-gold-accent hover:from-amber-300 text-slate-950 transition flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50"
+              >
+                <Video className="w-4 h-4" />
+                <span>{joining ? "جارٍ الدخول..." : "قبول ودخول الجلسة 🎥"}</span>
+              </button>
+            ) : activeNotification.link ? (
               <Link
                 href={activeNotification.link}
                 onClick={handleDismiss}
@@ -278,13 +355,13 @@ export function StudentDecisionOverlay() {
                 <span>الانتقال للحلقة / الجدول</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
-            )}
+            ) : null}
 
             <button
               onClick={handleDismiss}
               className="px-4 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white transition"
             >
-              حسناً، تم الفهم
+              {isLiveStarting ? "تذكير لاحقاً" : "حسناً، تم الفهم"}
             </button>
           </div>
         </div>

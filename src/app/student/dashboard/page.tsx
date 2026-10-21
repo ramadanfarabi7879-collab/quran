@@ -159,20 +159,25 @@ export default function StudentDashboard() {
   const handleStudent1ClickJoin = async (sessionId?: string, halaqaId?: string) => {
     setRequestingSession(true);
     try {
+      const targetSessionId = sessionId || activeSession?.id || "auto";
       const res = await fetch("/api/student/join-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionId: sessionId || activeSession?.id || "auto",
+          sessionId: targetSessionId,
           halaqaId: halaqaId || activeSession?.halaqaId || halaqat[0]?.id,
+          acceptInvitation: true,
         }),
       });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && (d.isAuthorized || d.redirectTo)) {
+        window.location.href = d.redirectTo || `/classroom/${targetSessionId}?role=student`;
+        return;
+      }
       if (res.ok) {
         setSessionAuthStatus("PENDING_APPROVAL");
-        alert("تم رفع طلب الانضمام إلى فضيلة الشيخ بنجاح، وطلبك قيد المراجعة والاعتماد الآن.");
         fetchData();
       } else {
-        const d = await res.json();
         alert(d.error || "فشل إرسال طلب الانضمام");
       }
     } catch (e) {

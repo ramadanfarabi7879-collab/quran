@@ -114,18 +114,27 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Student 1-Click Request Join Handler
   const handleStudent1ClickJoin = async (sessionId?: string) => {
     setRequestingJoin(true);
+    const targetSessionId = sessionId || liveModal?.sessionId;
     try {
       const res = await fetch("/api/student/join-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionId: sessionId || liveModal?.sessionId,
+          sessionId: targetSessionId,
+          acceptInvitation: true,
         }),
       });
-      if (res.ok) {
-        setLiveModal((prev) => (prev ? { ...prev, approvalStatus: "PENDING" } : null));
+      const data = await res.json().catch(() => ({}));
+      setLiveModal(null);
+      if (targetSessionId) {
+        window.location.href = data.redirectTo || `/classroom/${targetSessionId}?role=student`;
       }
-    } catch {} finally {
+    } catch {
+      setLiveModal(null);
+      if (targetSessionId) {
+        window.location.href = `/classroom/${targetSessionId}?role=student`;
+      }
+    } finally {
       setRequestingJoin(false);
     }
   };

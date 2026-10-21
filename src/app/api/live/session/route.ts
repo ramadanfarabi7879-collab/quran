@@ -154,12 +154,12 @@ export async function GET(req: Request) {
             e.student?.userId === effectiveUser.id
         );
 
-        if (sessionAtt?.isVerifiedByTeacher || (isEnrolled && !sessionAtt?.requestedCheckIn)) {
-          // Student was verified by the Sheikh or is enrolled in this halaqa - enters directly!
+        if (sessionAtt?.isVerifiedByTeacher || sessionAtt?.status === "PRESENT" || isEnrolled) {
+          // Student was verified by the Sheikh, already present, or is enrolled in this halaqa - enters directly!
           isAuthorized = true;
           authorizationStatus = "AUTHORIZED";
         } else if (sessionAtt?.requestedCheckIn) {
-          // Student clicked "طلب انضمام" and is waiting for Sheikh's acceptance
+          // Non-enrolled student clicked "طلب انضمام" and is waiting for Sheikh's acceptance
           isAuthorized = false;
           authorizationStatus = "PENDING_APPROVAL";
         } else {
