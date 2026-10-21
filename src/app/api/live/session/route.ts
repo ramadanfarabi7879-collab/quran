@@ -380,17 +380,27 @@ export async function POST(req: Request) {
       }
     }
 
-    // Send database notifications to each student
+    // Send database notifications to each student without duplicate spam
     for (const uid of Array.from(studentUserIdsToNotify)) {
-      await prisma.notification.create({
-        data: {
+      const existing = await prisma.notification.findFirst({
+        where: {
           userId: uid,
-          title: `بدأت الحلقة الآن: ${halaqa.name}`,
-          body: `الشيخ في انتظارك في الغرفة الافتراضية، اضغط للانضمام مباشرة.`,
           type: "HALAQA_STARTING",
           link: `/classroom/${liveSession.id}?role=student`,
         },
       });
+
+      if (!existing) {
+        await prisma.notification.create({
+          data: {
+            userId: uid,
+            title: `بدأت الحلقة الآن: ${halaqa.name}`,
+            body: `فضيلة ${user?.name || "الشيخ"} في انتظارك في الغرفة الافتراضية، اضغط للانضمام مباشرة.`,
+            type: "HALAQA_STARTING",
+            link: `/classroom/${liveSession.id}?role=student`,
+          },
+        });
+      }
     }
 
     // Broadcast Realtime Event to students (both halaqa-specific and global channels)
@@ -410,6 +420,11 @@ export async function POST(req: Request) {
     realtimeHub.broadcast("global", {
       type: "HALAQA_LIVE_STARTED",
       payload: livePayload,
+    });
+
+    realtimeHub.broadcast("global", {
+      type: "NEW_NOTIFICATION",
+      payload: { sessionId: liveSession.id, halaqaId },
     });
 
     return NextResponse.json({ success: true, session: liveSession });

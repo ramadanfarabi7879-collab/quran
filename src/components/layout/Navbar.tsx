@@ -91,13 +91,25 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
     fetchNotifications();
     checkActiveSession();
 
-    // 15-second fallback interval to keep performance smooth and lightweight
+    // High-responsiveness fallback interval (4s) for instant notifications & live session sync
     const interval = setInterval(() => {
       checkActiveSession();
       fetchNotifications();
-    }, 15000);
+    }, 4000);
 
-    return () => clearInterval(interval);
+    const handleFocusOrOnline = () => {
+      checkActiveSession();
+      fetchNotifications();
+    };
+
+    window.addEventListener("focus", handleFocusOrOnline);
+    window.addEventListener("online", handleFocusOrOnline);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocusOrOnline);
+      window.removeEventListener("online", handleFocusOrOnline);
+    };
   }, [user]);
 
   // Realtime notification update

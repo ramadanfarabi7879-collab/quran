@@ -5,6 +5,8 @@ type Listener = (event: RealtimeEvent) => void;
 class RealtimeHub {
   private listeners: Map<string, Set<Listener>> = new Map();
   private sessionStates: Map<string, MushafState> = new Map();
+  private recentEvents: RealtimeEvent[] = [];
+  private maxBufferedEvents = 100;
 
   subscribe(channel: string, listener: Listener): () => void {
     if (!this.listeners.has(channel)) {
@@ -30,7 +32,13 @@ class RealtimeHub {
       timestamp: Date.now(),
     };
 
-    // If channel-specific
+    // Buffer the event for polling clients
+    this.recentEvents.push(fullEvent);
+    if (this.recentEvents.length > this.maxBufferedEvents) {
+      this.recentEvents.shift();
+    }
+
+    // Channel-specific listeners
     const channelListeners = this.listeners.get(channel);
     if (channelListeners) {
       channelListeners.forEach((fn) => {
@@ -42,7 +50,7 @@ class RealtimeHub {
       });
     }
 
-    // Also notify global listeners
+    // Global listeners
     if (channel !== "global") {
       const globalListeners = this.listeners.get("global");
       if (globalListeners) {
@@ -55,6 +63,17 @@ class RealtimeHub {
         });
       }
     }
+  }
+
+  getRecentEvents(sinceTimestamp = 0, channel?: string): RealtimeEvent[] {
+    const cutoff = sinceTimestamp > 0 ? sinceTimestamp : Date.now() - 30000;
+    return this.recentEvents.filter((e) => {
+      if (e.timestamp <= cutoff) return false;
+      if (channel && channel !== "global" && e.channel !== channel && e.channel !== "global") {
+        return false;
+      }
+      return true;
+    });
   }
 
   setMushafState(sessionId: string, state: MushafState) {
@@ -84,9 +103,7 @@ class RealtimeHub {
   }
 }
 
-// Global singleton
+// Global singleton attached to globalThis across all environments
 const globalHub = globalThis as unknown as { __realtimeHub?: RealtimeHub };
 export const realtimeHub = globalHub.__realtimeHub ?? new RealtimeHub();
-if (process.env.NODE_ENV !== "production") {
-  globalHub.__realtimeHub = realtimeHub;
-}
+globalHub.__realtimeHub = realtimeHub;

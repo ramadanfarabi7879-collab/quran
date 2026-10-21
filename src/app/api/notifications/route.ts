@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -20,45 +22,69 @@ export async function GET(req: Request) {
     }
 
     if (!userId) {
-      return NextResponse.json({ notifications: [] });
+      return NextResponse.json({ notifications: [], activeLiveSession: null });
     }
 
+    // 1. Fetch user notifications
     const notifications = await prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: 30,
     });
 
-    // Check currently active live sessions
+    // 2. Query active live sessions in a single optimized query
     const activeSessions = await prisma.liveSession.findMany({
       where: { status: "ACTIVE" },
-      select: { id: true },
+      include: {
+        halaqa: {
+          include: {
+            teacher: { include: { user: true } },
+          },
+        },
+      },
     });
-    const activeSessionIds = new Set(activeSessions.map((s) => s.id));
+    const activeSessionMap = new Map(activeSessions.map((s) => [s.id, s]));
 
-    // Filter out stale starting notifications for ended sessions
-    const validNotifications = [];
-    const staleIdsToMarkRead: string[] = [];
+    // 3. Enrich notifications with live status without discarding historical records
+    const enrichedNotifications = notifications.map((n) => {
+      let isSessionActive = false;
+      let sessionData = null;
 
-    for (const n of notifications) {
       if (n.type === "HALAQA_STARTING") {
-        const linkParts = n.link ? n.link.split("/classroom/")[1]?.split("?")[0] : null;
-        if (!linkParts || !activeSessionIds.has(linkParts)) {
-          staleIdsToMarkRead.push(n.id);
-          continue;
+        const targetSessionId = n.link ? n.link.split("/classroom/")[1]?.split("?")[0] : null;
+        if (targetSessionId && activeSessionMap.has(targetSessionId)) {
+          isSessionActive = true;
+          const sess = activeSessionMap.get(targetSessionId)!;
+          sessionData = {
+            id: sess.id,
+            title: sess.title,
+            halaqaName: sess.halaqa?.name,
+            teacherName: sess.halaqa?.teacher?.user?.name,
+          };
         }
       }
-      validNotifications.push(n);
-    }
 
-    if (staleIdsToMarkRead.length > 0) {
-      await prisma.notification.updateMany({
-        where: { id: { in: staleIdsToMarkRead } },
-        data: { isRead: true },
-      }).catch(() => {});
-    }
+      return {
+        ...n,
+        isSessionActive,
+        sessionData,
+      };
+    });
 
-    return NextResponse.json({ notifications: validNotifications });
+    // Determine the most relevant active live session for this user
+    const firstActive = activeSessions.length > 0 ? activeSessions[0] : null;
+
+    return NextResponse.json({
+      notifications: enrichedNotifications,
+      activeLiveSession: firstActive
+        ? {
+            id: firstActive.id,
+            title: firstActive.title,
+            halaqaName: firstActive.halaqa?.name || "حلقة القرآن الكريم",
+            teacherName: firstActive.halaqa?.teacher?.user?.name || "معلم ومقرئ الحلقة",
+          }
+        : null,
+    });
   } catch (error) {
     console.error("Get notifications error:", error);
     return NextResponse.json({ error: "فشل استرداد الإشعارات", notifications: [] }, { status: 200 });

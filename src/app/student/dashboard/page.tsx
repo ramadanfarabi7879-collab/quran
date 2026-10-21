@@ -79,6 +79,19 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     fetchData();
+
+    // Fallback polling every 4 seconds to guarantee live session banners appear even if SSE drops
+    const interval = setInterval(fetchData, 4000);
+    const handleRecheck = () => fetchData();
+
+    window.addEventListener("focus", handleRecheck);
+    window.addEventListener("online", handleRecheck);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleRecheck);
+      window.removeEventListener("online", handleRecheck);
+    };
   }, []);
 
   // Realtime listener for live session notifications

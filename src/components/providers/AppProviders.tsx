@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback, ReactNode } from "react";
 import { CurrentUser, RealtimeEvent } from "@/types";
 import { SheikhDecisionOverlay } from "@/components/notifications/SheikhDecisionOverlay";
 import { StudentDecisionOverlay } from "@/components/notifications/StudentDecisionOverlay";
@@ -39,7 +39,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
   const [darkMode, setDarkMode] = useState(false);
   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null);
   const [connected, setConnected] = useState(false);
-  const [callbacks] = useState<Map<string, Set<(e: RealtimeEvent) => void>>>(new Map());
+  const callbacksRef = useRef<Map<string, Set<(e: RealtimeEvent) => void>>>(new Map());
+  const processedEventKeysRef = useRef<Set<string>>(new Set());
+  const lastEventTimestampRef = useRef<number>(Date.now() - 60000);
 
   // Dark mode init
   useEffect(() => {
@@ -127,94 +129,124 @@ export function AppProviders({ children }: { children: ReactNode }) {
     window.location.href = "/login";
   };
 
-  // Setup Global Realtime - polling mode for Vercel, SSE for local dev
+  // Dispatch an event to internal subscribers with de-duplication
+  const dispatchEvent = useCallback((event: RealtimeEvent) => {
+    const eventKey = `${event.type}-${event.timestamp}-${JSON.stringify(event.payload || "")}`;
+    if (processedEventKeysRef.current.has(eventKey)) return;
+    processedEventKeysRef.current.add(eventKey);
+
+    // Keep set bounded
+    if (processedEventKeysRef.current.size > 200) {
+      const it = processedEventKeysRef.current.values();
+      for (let i = 0; i < 50; i++) {
+        const nextVal = it.next().value;
+        if (nextVal !== undefined) {
+          processedEventKeysRef.current.delete(nextVal);
+        }
+      }
+    }
+
+    if (event.timestamp > lastEventTimestampRef.current) {
+      lastEventTimestampRef.current = event.timestamp;
+    }
+
+    setLastEvent(event);
+
+    const cbs = callbacksRef.current;
+    if (event.channel && cbs.has(event.channel)) {
+      cbs.get(event.channel)!.forEach((cb) => {
+        try { cb(event); } catch (e) { console.error(e); }
+      });
+    }
+    if (cbs.has("global")) {
+      cbs.get("global")!.forEach((cb) => {
+        try { cb(event); } catch (e) { console.error(e); }
+      });
+    }
+  }, []);
+
+  // Poll for missed events
+  const pollMissedEvents = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/realtime/poll?since=${lastEventTimestampRef.current}&channel=global`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.events && Array.isArray(data.events)) {
+          for (const ev of data.events) {
+            dispatchEvent(ev);
+          }
+        }
+      }
+    } catch {}
+  }, [dispatchEvent]);
+
+  // Setup Global Realtime (Hybrid SSE + Fast Fallback Polling)
   useEffect(() => {
     let eventSource: EventSource | null = null;
     let pollInterval: NodeJS.Timeout | null = null;
     let isMounted = true;
 
-    const setupRealtime = async () => {
+    // 1. Try Native SSE
+    if (typeof EventSource !== "undefined") {
       try {
-        // Check if SSE works (returns mode:polling on Vercel)
-        const testRes = await fetch("/api/realtime/stream?channel=global");
-        const testData = await testRes.json().catch(() => null);
-
-        if (testData?.mode === "polling") {
-          // Vercel: use polling instead of SSE
-          setConnected(true);
-          pollInterval = setInterval(async () => {
-            if (!isMounted) return;
-            try {
-              // Poll for any new events via a lightweight endpoint
-              const res = await fetch("/api/realtime/poll");
-              if (res.ok) {
-                const data = await res.json();
-                if (data.events?.length) {
-                  data.events.forEach((event: RealtimeEvent) => {
-                    setLastEvent(event);
-                    if (event.channel && callbacks.has(event.channel)) {
-                      callbacks.get(event.channel)!.forEach((cb) => cb(event));
-                    }
-                    if (callbacks.has("global")) {
-                      callbacks.get("global")!.forEach((cb) => cb(event));
-                    }
-                  });
-                }
-              }
-            } catch {}
-          }, 15000); // Poll every 15 seconds
-        } else {
-          // Local dev: use SSE
-          eventSource = new EventSource("/api/realtime/stream?channel=global");
-          eventSource.onopen = () => { if (isMounted) setConnected(true); };
-          eventSource.onmessage = (e) => {
-            try {
-              const event: RealtimeEvent = JSON.parse(e.data);
-              if (isMounted) {
-                setLastEvent(event);
-                if (event.channel && callbacks.has(event.channel)) {
-                  callbacks.get(event.channel)!.forEach((cb) => cb(event));
-                }
-                if (callbacks.has("global")) {
-                  callbacks.get("global")!.forEach((cb) => cb(event));
-                }
-              }
-            } catch {}
-          };
-          eventSource.onerror = () => {
-            if (isMounted) setConnected(false);
-          };
-        }
+        eventSource = new EventSource("/api/realtime/stream?channel=global");
+        eventSource.onopen = () => {
+          if (isMounted) setConnected(true);
+        };
+        eventSource.onmessage = (e) => {
+          try {
+            const event: RealtimeEvent = JSON.parse(e.data);
+            if (isMounted && event) {
+              dispatchEvent(event);
+            }
+          } catch {}
+        };
+        eventSource.onerror = () => {
+          if (isMounted) setConnected(false);
+        };
       } catch {
-        // Fallback: just mark as connected without realtime
-        if (isMounted) setConnected(true);
+        if (isMounted) setConnected(false);
+      }
+    }
+
+    // 2. Active Fast Fallback Polling (Every 2.5s) to guarantee zero notification delay
+    pollInterval = setInterval(() => {
+      if (!isMounted) return;
+      pollMissedEvents();
+    }, 2500);
+
+    // 3. Instant re-fetch on window focus or internet reconnect
+    const handleReconnected = () => {
+      if (isMounted) {
+        pollMissedEvents();
       }
     };
-
-    setupRealtime();
+    window.addEventListener("focus", handleReconnected);
+    window.addEventListener("online", handleReconnected);
 
     return () => {
       isMounted = false;
       if (eventSource) eventSource.close();
       if (pollInterval) clearInterval(pollInterval);
+      window.removeEventListener("focus", handleReconnected);
+      window.removeEventListener("online", handleReconnected);
     };
-  }, [callbacks]);
+  }, [dispatchEvent, pollMissedEvents]);
 
-
-  const subscribe = (channel: string, callback: (event: RealtimeEvent) => void) => {
-    if (!callbacks.has(channel)) {
-      callbacks.set(channel, new Set());
+  const subscribe = useCallback((channel: string, callback: (event: RealtimeEvent) => void) => {
+    if (!callbacksRef.current.has(channel)) {
+      callbacksRef.current.set(channel, new Set());
     }
-    callbacks.get(channel)!.add(callback);
+    callbacksRef.current.get(channel)!.add(callback);
 
     return () => {
-      const set = callbacks.get(channel);
+      const set = callbacksRef.current.get(channel);
       if (set) {
         set.delete(callback);
-        if (set.size === 0) callbacks.delete(channel);
+        if (set.size === 0) callbacksRef.current.delete(channel);
       }
     };
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, loading, switchUser, logout, refreshUser: fetchUser }}>

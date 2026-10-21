@@ -77,9 +77,11 @@ export function InteractiveMushaf({
   const [currentSurah, setCurrentSurah] = useState<number>(1);
   const [highlightedAyahs, setHighlightedAyahs] = useState<number[]>([]);
   const [allowFreeNavigation, setAllowFreeNavigation] = useState(false);
+  const [teacherState, setTeacherState] = useState<{ page: number; surah: number }>({ page: 1, surah: 1 });
   const [isLockedByServer, setIsLockedByServer] = useState(false);
   const [lockMessage, setLockMessage] = useState("");
   const isStudentLocked = !isTeacher && (mode === "TASMEE_LOCKED" || isLockedByServer);
+  const canNavigate = isTeacher || allowFreeNavigation;
 
   // Active Icon Selectors Popover State (Surah, Juz, Hizb, Rub')
   const [activePopover, setActivePopover] = useState<"surah" | "juz" | "hizb" | "rub" | null>(null);
@@ -93,6 +95,8 @@ export function InteractiveMushaf({
   const [imageError, setImageError] = useState(false);
   const mushafScrollRef = useRef<HTMLDivElement>(null);
   const currentPageRef = useRef(currentPage);
+  const prevAllowFreeRef = useRef<boolean>(false);
+  const isInitialSyncDoneRef = useRef<boolean>(false);
 
   useEffect(() => {
     currentPageRef.current = currentPage;
@@ -126,22 +130,42 @@ export function InteractiveMushaf({
   const applyState = (st: MushafState) => {
     setMode((prev) => (prev !== st.mode ? st.mode : prev));
     setHighlightedAyahs(st.highlightedAyahs || []);
-    setAllowFreeNavigation(st.allowFreeNavigation);
+    
+    const wasFreeAllowed = prevAllowFreeRef.current;
+    const isFreeNow = !!st.allowFreeNavigation;
+    setAllowFreeNavigation(isFreeNow);
+    setTeacherState({ page: st.currentPage, surah: st.currentSurah });
 
-    // CRITICAL: Only force page update from server if teacher or GUIDED mode!
-    // In self-reading (VIEW mode), student navigates freely without polling resets!
-    if (isTeacher || st.mode === "GUIDED") {
-      if (st.currentPage !== currentPageRef.current) {
-        currentPageRef.current = st.currentPage;
-        setCurrentPage(st.currentPage);
-        setCurrentSurah(st.currentSurah);
-        setImageLoading(true);
-        setImageError(false);
-        if (mushafScrollRef.current) {
-          mushafScrollRef.current.scrollTop = 0;
+    if (isTeacher) {
+      // Teacher governs their own view
+    } else {
+      // Student:
+      // 1. Initial join: automatically snaps to teacher's current page
+      // 2. Free navigation is disabled: automatically follows teacher's page
+      // 3. Free navigation was just disabled: snaps back to teacher's page immediately
+      // 4. Guided mode: forces follow
+      const mustFollow =
+        !isInitialSyncDoneRef.current ||
+        !isFreeNow ||
+        (wasFreeAllowed && !isFreeNow) ||
+        st.mode === "GUIDED";
+
+      if (mustFollow) {
+        if (st.currentPage !== currentPageRef.current || st.currentSurah !== currentSurah) {
+          currentPageRef.current = st.currentPage;
+          setCurrentPage(st.currentPage);
+          setCurrentSurah(st.currentSurah);
+          setImageLoading(true);
+          setImageError(false);
+          if (mushafScrollRef.current) {
+            mushafScrollRef.current.scrollTop = 0;
+          }
         }
       }
     }
+
+    prevAllowFreeRef.current = isFreeNow;
+    isInitialSyncDoneRef.current = true;
 
     if (st.mode === "TASMEE_LOCKED" && !isTeacher) {
       setIsLockedByServer(true);
@@ -301,6 +325,7 @@ export function InteractiveMushaf({
     if (newPage < 1 || newPage > 604) return;
     if (newPage === currentPageRef.current) return;
     if (isStudentLocked) return;
+    if (!canNavigate) return; // Disallow student navigation when free browsing is disabled
 
     const matchedSurah = getSurahForPage(newPage);
     currentPageRef.current = newPage;
@@ -319,12 +344,20 @@ export function InteractiveMushaf({
   };
 
   const handleSurahChange = (surahNum: number) => {
+    if (isStudentLocked) return;
+    if (!canNavigate) return; // Disallow student navigation when free browsing is disabled
     const s = getSurahMeta(surahNum);
     if (!s) return;
+    currentPageRef.current = s.startPage;
     setCurrentSurah(surahNum);
     setCurrentPage(s.startPage);
     setImageLoading(true);
     setImageError(false);
+
+    if (mushafScrollRef.current) {
+      mushafScrollRef.current.scrollTop = 0;
+    }
+
     if (isTeacher) {
       updateServerState({ currentSurah: surahNum, currentPage: s.startPage });
     }
@@ -489,19 +522,33 @@ export function InteractiveMushaf({
           </div>
 
           {/* Free browsing toggle for student */}
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700">
+          <div className="flex items-center gap-2 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700">
+            <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer font-bold select-none">
               <input
                 type="checkbox"
                 checked={allowFreeNavigation}
                 onChange={(e) => {
-                  setAllowFreeNavigation(e.target.checked);
-                  updateServerState({ allowFreeNavigation: e.target.checked });
+                  const nextVal = e.target.checked;
+                  setAllowFreeNavigation(nextVal);
+                  updateServerState({
+                    allowFreeNavigation: nextVal,
+                    currentPage,
+                    currentSurah,
+                  });
                 }}
-                className="rounded text-islamic-600 focus:ring-islamic-500 w-3.5 h-3.5"
+                className="rounded text-emerald-500 focus:ring-emerald-400 w-4 h-4 cursor-pointer accent-emerald-500"
               />
-              سماح بالتصفح الحر للطالب
+              <span>السماح للطالب بالتصفح الحر</span>
             </label>
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${
+                allowFreeNavigation
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+              }`}
+            >
+              {allowFreeNavigation ? "مفتوح للطالب" : "مقفل (المعلم يقود)"}
+            </span>
           </div>
         </div>
       )}
@@ -599,6 +646,46 @@ export function InteractiveMushaf({
         </div>
       )}
 
+      {/* Student Status & Sync Banner */}
+      {!isTeacher && !isStudentLocked && (
+        <div
+          className={`px-4 py-2 border-b flex flex-wrap items-center justify-between gap-2 text-xs transition-colors ${
+            allowFreeNavigation
+              ? "bg-amber-950/40 border-amber-800/60 text-amber-200"
+              : "bg-emerald-950/50 border-emerald-800/60 text-emerald-200"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {allowFreeNavigation ? (
+              <>
+                <Unlock className="w-4 h-4 text-amber-400" />
+                <span className="font-bold">
+                  التصفح الحر متاح: أذن لك المعلم بتصفح المصحف الشريف بشكل مستقل
+                </span>
+              </>
+            ) : (
+              <>
+                <Lock className="w-4 h-4 text-emerald-400" />
+                <span className="font-bold">
+                  المصحف مدار تلقائياً من قِبل المعلم (أنت تتابع المعلم عند ص {toArabicNumeral(teacherState.page)} - سورة {getSurahMeta(teacherState.surah)?.name || ""})
+                </span>
+              </>
+            )}
+          </div>
+
+          {allowFreeNavigation && currentPage !== teacherState.page && (
+            <button
+              onClick={() => handlePageChange(teacherState.page)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shadow transition active:scale-95"
+              title="الرجوع إلى الصفحة التي يقف عندها المعلم حالياً"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>العودة لصفحة المعلم (ص {toArabicNumeral(teacherState.page)})</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ACTIVE ICON-BASED MULTI-SELECTORS BAR (السورة، الجزء، الحزب، الربع) */}
       {!isStudentLocked && (
         <div className="relative bg-slate-900 text-white p-3 border-b border-slate-800">
@@ -608,14 +695,21 @@ export function InteractiveMushaf({
               {/* 1. Surah Icon Button */}
               <div className="relative">
                 <button
-                  onClick={() => setActivePopover(activePopover === "surah" ? null : "surah")}
+                  onClick={() => {
+                    if (!canNavigate) return;
+                    setActivePopover(activePopover === "surah" ? null : "surah");
+                  }}
+                  disabled={!canNavigate}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
-                    activePopover === "surah"
+                    !canNavigate
+                      ? "opacity-60 cursor-not-allowed bg-slate-800/60 text-slate-400 border border-slate-700/50"
+                      : activePopover === "surah"
                       ? "bg-emerald-600 text-white ring-2 ring-emerald-400"
                       : "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
                   }`}
-                  title="انقر لاختيار السورة بأيقونات وقائمة السور"
+                  title={!canNavigate ? "المصحف مدار تلقائياً من قِبل المعلم" : "انقر لاختيار السورة بأيقونات وقائمة السور"}
                 >
+                  {!canNavigate && <Lock className="w-3.5 h-3.5 text-slate-400" />}
                   <BookOpen className="w-4 h-4 text-emerald-400" />
                   <span>السورة:</span>
                   <span className="text-amber-300 font-extrabold">{currentSurahMeta?.name}</span>
@@ -699,14 +793,21 @@ export function InteractiveMushaf({
               {/* 2. Juz Icon Button */}
               <div className="relative">
                 <button
-                  onClick={() => setActivePopover(activePopover === "juz" ? null : "juz")}
+                  onClick={() => {
+                    if (!canNavigate) return;
+                    setActivePopover(activePopover === "juz" ? null : "juz");
+                  }}
+                  disabled={!canNavigate}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
-                    activePopover === "juz"
+                    !canNavigate
+                      ? "opacity-60 cursor-not-allowed bg-slate-800/60 text-slate-400 border border-slate-700/50"
+                      : activePopover === "juz"
                       ? "bg-amber-600 text-white ring-2 ring-amber-400"
                       : "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
                   }`}
-                  title="انقر لاختيار الجزء"
+                  title={!canNavigate ? "المصحف مدار تلقائياً من قبل المعلم" : "انقر لاختيار الجزء"}
                 >
+                  {!canNavigate && <Lock className="w-3.5 h-3.5 text-slate-400" />}
                   <Layers className="w-4 h-4 text-amber-400" />
                   <span>الجزء:</span>
                   <span className="text-amber-300 font-extrabold">{toArabicNumeral(currentJuzNumber)}</span>
@@ -791,14 +892,21 @@ export function InteractiveMushaf({
               {/* 3. Hizb Icon Button */}
               <div className="relative">
                 <button
-                  onClick={() => setActivePopover(activePopover === "hizb" ? null : "hizb")}
+                  onClick={() => {
+                    if (!canNavigate) return;
+                    setActivePopover(activePopover === "hizb" ? null : "hizb");
+                  }}
+                  disabled={!canNavigate}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
-                    activePopover === "hizb"
+                    !canNavigate
+                      ? "opacity-60 cursor-not-allowed bg-slate-800/60 text-slate-400 border border-slate-700/50"
+                      : activePopover === "hizb"
                       ? "bg-blue-600 text-white ring-2 ring-blue-400"
                       : "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
                   }`}
-                  title="انقر لاختيار الحزب"
+                  title={!canNavigate ? "المصحف مدار تلقائياً من قبل المعلم" : "انقر لاختيار الحزب"}
                 >
+                  {!canNavigate && <Lock className="w-3.5 h-3.5 text-slate-400" />}
                   <Compass className="w-4 h-4 text-blue-400" />
                   <span>الحزب:</span>
                   <span className="text-blue-300 font-extrabold">{toArabicNumeral(currentHizbNumber)}</span>
@@ -883,14 +991,21 @@ export function InteractiveMushaf({
               {/* 4. Rub' (Quarter) Icon Button */}
               <div className="relative">
                 <button
-                  onClick={() => setActivePopover(activePopover === "rub" ? null : "rub")}
+                  onClick={() => {
+                    if (!canNavigate) return;
+                    setActivePopover(activePopover === "rub" ? null : "rub");
+                  }}
+                  disabled={!canNavigate}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
-                    activePopover === "rub"
+                    !canNavigate
+                      ? "opacity-60 cursor-not-allowed bg-slate-800/60 text-slate-400 border border-slate-700/50"
+                      : activePopover === "rub"
                       ? "bg-purple-600 text-white ring-2 ring-purple-400"
                       : "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
                   }`}
-                  title="انقر لاختيار ربع الحزب مع بداية الآية"
+                  title={!canNavigate ? "المصحف مدار تلقائياً من قبل المعلم" : "انقر لاختيار ربع الحزب مع بداية الآية"}
                 >
+                  {!canNavigate && <Lock className="w-3.5 h-3.5 text-slate-400" />}
                   <Bookmark className="w-4 h-4 text-purple-400" />
                   <span>الربع:</span>
                   <span className="text-purple-300 font-extrabold">
@@ -1051,9 +1166,10 @@ export function InteractiveMushaf({
                   min="1"
                   max="604"
                   value={currentPage}
-                  disabled={isStudentLocked}
+                  disabled={!canNavigate || isStudentLocked}
                   onChange={(e) => handlePageChange(Number(e.target.value))}
-                  className="w-12 text-center text-xs font-black bg-transparent text-amber-300 focus:outline-none"
+                  className="w-12 text-center text-xs font-black bg-transparent text-amber-300 focus:outline-none disabled:opacity-40"
+                  title={!canNavigate ? "المصحف مدار تلقائياً من قبل المعلم" : "أدخل رقم الصفحة"}
                 />
                 <span className="text-xs text-slate-500 font-mono">/ ٦٠٤</span>
               </div>
@@ -1090,17 +1206,17 @@ export function InteractiveMushaf({
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage <= 1 || isStudentLocked}
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 disabled:opacity-40 transition"
-                  title="الصفحة السابقة"
+                  disabled={currentPage <= 1 || !canNavigate || isStudentLocked}
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  title={!canNavigate ? "المصحف مدار تلقائياً من قبل المعلم" : "الصفحة السابقة"}
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage >= 604 || isStudentLocked}
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 disabled:opacity-40 transition"
-                  title="الصفحة التالية"
+                  disabled={currentPage >= 604 || !canNavigate || isStudentLocked}
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  title={!canNavigate ? "المصحف مدار تلقائياً من قبل المعلم" : "الصفحة التالية"}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>

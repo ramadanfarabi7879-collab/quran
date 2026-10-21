@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
+import { InAppBookReader } from "@/components/library/InAppBookReader";
 import {
   Library,
   BookOpen,
@@ -12,12 +13,14 @@ import {
   Bookmark,
   CheckCircle2,
   XCircle,
+  Search,
 } from "lucide-react";
 
 export default function TeacherLibraryPage() {
   const [books, setBooks] = useState<any[]>([]);
   const [halaqat, setHalaqat] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [readingBook, setReadingBook] = useState<any | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -95,9 +98,14 @@ export default function TeacherLibraryPage() {
     "مذكرات المعلم",
   ];
 
-  const filteredBooks = books.filter(
-    (b) => selectedCategory === "ALL" || b.category === selectedCategory
-  );
+  const filteredBooks = books.filter((b) => {
+    const matchCat = selectedCategory === "ALL" || b.category === selectedCategory;
+    const matchSearch =
+      !searchQuery.trim() ||
+      b.title.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+      (b.author && b.author.toLowerCase().includes(searchQuery.trim().toLowerCase()));
+    return matchCat && matchSearch;
+  });
 
   return (
     <AppShell>
@@ -113,13 +121,27 @@ export default function TeacherLibraryPage() {
             </p>
           </div>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 bg-islamic-800 hover:bg-islamic-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition"
-          >
-            <Plus className="w-4 h-4" />
-            إضافة كتاب جديد
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Search */}
+            <div className="relative flex-1 sm:w-60">
+              <Search className="w-4 h-4 absolute right-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="ابحث في الكتب أو المؤلفين..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-xs pr-9 pl-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-sm"
+              />
+            </div>
+
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 bg-islamic-800 hover:bg-islamic-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              إضافة كتاب
+            </button>
+          </div>
         </div>
 
         {/* Category Pills */}
@@ -196,53 +218,12 @@ export default function TeacherLibraryPage() {
           ))}
         </div>
 
-        {/* Modal: In-app PDF / Book Reader */}
+        {/* In-App Interactive Digital Book Reader */}
         {readingBook && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-3xl w-full h-[85vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-              <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <BookOpen className="w-5 h-5 text-gold-accent" />
-                  <div>
-                    <h3 className="font-bold text-sm">{readingBook.title}</h3>
-                    <span className="text-[10px] text-slate-400">{readingBook.author}</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setReadingBook(null)}
-                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
-                >
-                  <XCircle className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="flex-1 p-6 bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center text-center overflow-y-auto">
-                <div className="max-w-md bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-800 space-y-4">
-                  <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center mx-auto">
-                    <FileText className="w-8 h-8" />
-                  </div>
-                  <h4 className="font-black text-base text-slate-900 dark:text-slate-100">
-                    {readingBook.title}
-                  </h4>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    {readingBook.description || "منهج تعليمي معتمد لمدارسة أحكام القرآن الكريم."}
-                  </p>
-                  <div className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-xl">
-                    عدد الصفحات: {readingBook.pagesCount} صفحة • قارئ رقمي مدمج
-                  </div>
-                  <a
-                    href={readingBook.fileUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 bg-islamic-800 hover:bg-islamic-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl shadow transition"
-                  >
-                    <Download className="w-4 h-4" />
-                    فتح وتنزيل النسخة الأصلية
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
+          <InAppBookReader
+            book={readingBook}
+            onClose={() => setReadingBook(null)}
+          />
         )}
 
         {/* Modal: Add Book */}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { CURRICULUM_BOOKS } from "@/lib/booksData";
 
 export async function GET(req: Request) {
   try {
@@ -10,7 +11,7 @@ export async function GET(req: Request) {
     const where: any = {};
     if (category) where.category = category;
 
-    const books = await prisma.libraryBook.findMany({
+    let books = await prisma.libraryBook.findMany({
       where,
       include: {
         halaqaAssignments: {
@@ -19,6 +20,39 @@ export async function GET(req: Request) {
       },
       orderBy: { createdAt: "desc" },
     });
+
+    // Auto-seed curriculum books if database is empty
+    if (books.length === 0 && !category) {
+      for (const b of CURRICULUM_BOOKS) {
+        await prisma.libraryBook
+          .upsert({
+            where: { id: b.id },
+            create: {
+              id: b.id,
+              title: b.title,
+              author: b.author,
+              category: b.category,
+              fileUrl: b.fileUrl,
+              coverUrl: b.coverUrl,
+              description: b.description,
+              pagesCount: b.pagesCount,
+              uploadedBy: "إدارة المنصة",
+            },
+            update: {},
+          })
+          .catch(() => {});
+      }
+
+      books = await prisma.libraryBook.findMany({
+        where,
+        include: {
+          halaqaAssignments: {
+            include: { halaqa: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    }
 
     return NextResponse.json({ books });
   } catch (error) {
