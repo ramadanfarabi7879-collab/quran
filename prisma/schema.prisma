@@ -321,6 +321,20 @@ model PlatformSetting {
   value String
 }
 
+model ClassroomSignal {
+  id             Int      @id @default(autoincrement())
+  sessionId      String
+  senderRole     String
+  senderName     String
+  senderClientId String
+  targetClientId String?
+  signalType     String
+  data           String
+  createdAt      DateTime @default(now())
+
+  @@index([sessionId, id])
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   action    String

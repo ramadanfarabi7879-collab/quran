@@ -3,20 +3,6 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// Key prefix for signaling data stored in PlatformSetting
-const SIG_KEY_PREFIX = "sig:";
-const MAX_MESSAGES = 100;
-
-interface SignalingMessage {
-  id: number;
-  senderRole: string;
-  senderName: string;
-  senderClientId?: string;
-  signalType: string;
-  data: any;
-  timestamp: number;
-}
-
 async function resolveSessionKey(sessionId: string | null): Promise<string> {
   if (!sessionId || sessionId === "auto") {
     try {
@@ -31,81 +17,140 @@ async function resolveSessionKey(sessionId: string | null): Promise<string> {
   return sessionId;
 }
 
-async function getQueue(sessionKey: string): Promise<SignalingMessage[]> {
-  try {
-    const rec = await prisma.platformSetting.findUnique({
-      where: { key: SIG_KEY_PREFIX + sessionKey },
-    });
-    if (rec?.value) {
-      return JSON.parse(rec.value) as SignalingMessage[];
-    }
-  } catch {}
-  return [];
-}
-
-async function saveQueue(sessionKey: string, messages: SignalingMessage[]): Promise<void> {
-  // Keep only last MAX_MESSAGES
-  const trimmed = messages.slice(-MAX_MESSAGES);
-  await prisma.platformSetting.upsert({
-    where: { key: SIG_KEY_PREFIX + sessionKey },
-    create: { key: SIG_KEY_PREFIX + sessionKey, value: JSON.stringify(trimmed) },
-    update: { value: JSON.stringify(trimmed) },
-  });
-}
-
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const rawSessionId = searchParams.get("sessionId");
-  const role = searchParams.get("role");
-  const clientId = searchParams.get("clientId");
-  const since = parseInt(searchParams.get("since") || "0", 10);
+  try {
+    const { searchParams } = new URL(req.url);
+    const rawSessionId = searchParams.get("sessionId");
+    const role = searchParams.get("role");
+    const clientId = searchParams.get("clientId") || "";
+    const since = parseInt(searchParams.get("since") || "0", 10);
 
-  const sessionId = await resolveSessionKey(rawSessionId);
-  const messages = await getQueue(sessionId);
+    const sessionId = await resolveSessionKey(rawSessionId);
 
-  const newMessages = messages.filter((m) => {
-    if (m.id <= since) return false;
-    if (clientId && m.senderClientId && m.senderClientId === clientId) return false;
-    if (role && m.senderRole && m.senderRole === role) return false;
-    return true;
-  });
+    // Fetch messages after `since`, excluding messages sent by this exact client.
+    // Also respect targetClientId (broadcast if targetClientId is null/empty or equals clientId)
+    const records = await prisma.classroomSignal.findMany({
+      where: {
+        sessionId,
+        id: { gt: since },
+        ...(clientId ? { senderClientId: { not: clientId } } : {}),
+        OR: [
+          { targetClientId: null },
+          { targetClientId: "" },
+          ...(clientId ? [{ targetClientId: clientId }] : []),
+        ],
+      },
+      orderBy: { id: "asc" },
+      take: 100,
+    });
 
-  const latestId = messages.length > 0 ? messages[messages.length - 1].id : since;
+    const messages = records.map((r) => {
+      let parsedData = null;
+      try {
+        parsedData = r.data ? JSON.parse(r.data) : null;
+      } catch {
+        parsedData = r.data;
+      }
+      return {
+        id: r.id,
+        senderRole: r.senderRole,
+        senderName: r.senderName,
+        senderClientId: r.senderClientId,
+        targetClientId: r.targetClientId,
+        signalType: r.signalType,
+        data: parsedData,
+        timestamp: r.createdAt.getTime(),
+      };
+    });
 
-  return NextResponse.json({ messages: newMessages, latestId, sessionId });
+    // Determine the latest ID for the session to prevent repeated scans
+    const latestSignal = await prisma.classroomSignal.findFirst({
+      where: { sessionId },
+      orderBy: { id: "desc" },
+      select: { id: true },
+    });
+
+    const latestId = latestSignal ? Math.max(latestSignal.id, since) : (records.length > 0 ? records[records.length - 1].id : since);
+
+    return NextResponse.json({
+      messages,
+      latestId,
+      sessionId,
+      count: messages.length,
+    });
+  } catch (error) {
+    console.error("Signaling GET error:", error);
+    return NextResponse.json({ error: "فشل جلب إشارات الجلسة" }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { sessionId: rawSessionId, signalType, senderRole, senderName, senderClientId, data } = body;
+    const {
+      sessionId: rawSessionId,
+      signalType,
+      senderRole,
+      senderName,
+      senderClientId,
+      targetClientId,
+      data,
+    } = body;
 
     if (!signalType || !senderRole) {
       return NextResponse.json({ error: "بيانات الإشارة غير مكتملة" }, { status: 400 });
     }
 
     const sessionId = await resolveSessionKey(rawSessionId);
-    const messages = await getQueue(sessionId);
 
-    const lastId = messages.length > 0 ? messages[messages.length - 1].id : 0;
-    const msgId = lastId + 1;
+    const record = await prisma.classroomSignal.create({
+      data: {
+        sessionId,
+        signalType,
+        senderRole,
+        senderName: senderName || "",
+        senderClientId: senderClientId || "",
+        targetClientId: targetClientId || null,
+        data: JSON.stringify(data ?? null),
+      },
+    });
 
-    const msg: SignalingMessage = {
-      id: msgId,
-      senderRole,
-      senderName: senderName || "",
-      senderClientId: senderClientId || "",
+    // Opportunistic pruning: occasionally prune signals older than 2 hours or older than latest 200 in this session
+    if (record.id % 20 === 0) {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      prisma.classroomSignal.deleteMany({
+        where: {
+          sessionId,
+          createdAt: { lt: twoHoursAgo },
+        },
+      }).catch(() => {});
+    }
+
+    return NextResponse.json({
+      success: true,
+      messageId: record.id,
+      sessionId,
       signalType,
-      data,
-      timestamp: Date.now(),
-    };
-
-    messages.push(msg);
-    await saveQueue(sessionId, messages);
-
-    return NextResponse.json({ success: true, messageId: msgId, sessionId });
+    });
   } catch (error) {
-    console.error("Signaling error:", error);
+    console.error("Signaling POST error:", error);
     return NextResponse.json({ error: "فشل إرسال الإشارة" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const rawSessionId = searchParams.get("sessionId");
+    const sessionId = await resolveSessionKey(rawSessionId);
+
+    await prisma.classroomSignal.deleteMany({
+      where: { sessionId },
+    });
+
+    return NextResponse.json({ success: true, message: "تم مسح إشارات الجلسة" });
+  } catch (error) {
+    console.error("Signaling DELETE error:", error);
+    return NextResponse.json({ error: "فشل مسح إشارات الجلسة" }, { status: 500 });
   }
 }
