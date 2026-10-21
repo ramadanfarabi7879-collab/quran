@@ -15,3 +15,5 @@ next-env.d.ts
 cloudflared.exe
 *.zip
 node.exe
+
+scratch/
