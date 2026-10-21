@@ -37,6 +37,7 @@ export default function StudentDashboard() {
   const [evaluations, setEvaluations] = useState<any[]>([]);
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [sessionAuthStatus, setSessionAuthStatus] = useState<string>("NO_ACTIVE_SESSION");
+  const [followUpRequest, setFollowUpRequest] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
@@ -65,9 +66,13 @@ export default function StudentDashboard() {
         if (d.session && d.session.status === "ACTIVE") {
           setActiveSession(d.session);
           setSessionAuthStatus(d.authorizationStatus || "NEEDS_REQUEST");
+          if (d.followUpRequest) {
+            setFollowUpRequest(d.followUpRequest);
+          }
         } else {
           setActiveSession(null);
           setSessionAuthStatus("NO_ACTIVE_SESSION");
+          setFollowUpRequest(null);
         }
       }
     } catch (e) {
@@ -119,6 +124,27 @@ export default function StudentDashboard() {
       } else if (lastEvent.type === "SESSION_JOIN_RESCHEDULED") {
         setSessionAuthStatus("NEEDS_REQUEST");
         fetchData();
+      } else if (lastEvent.type === "SESSION_FOLLOWUP_DECIDED") {
+        const payload = lastEvent.payload;
+        if (payload?.decision === "ACCEPTED") {
+          const targetSessionId = payload?.sessionId || activeSession?.id;
+          if (targetSessionId) {
+            window.location.href = `/classroom/${targetSessionId}?role=student`;
+            return;
+          }
+          setSessionAuthStatus("AUTHORIZED");
+        } else if (payload?.decision === "DEFERRED") {
+          setSessionAuthStatus("DEFERRED");
+        } else if (payload?.decision === "REJECTED") {
+          setSessionAuthStatus("REJECTED");
+        }
+        fetchData();
+      } else if (lastEvent.type === "SESSION_FOLLOWUP_SLOT_PROPOSED") {
+        setSessionAuthStatus("PROPOSED_SLOT");
+        if (lastEvent.payload?.slot) {
+          setFollowUpRequest(lastEvent.payload);
+        }
+        fetchData();
       } else if (
         lastEvent.type === "SCHEDULE_UPDATED" ||
         lastEvent.type === "SESSION_JOIN_APPROVED" ||
@@ -147,6 +173,9 @@ export default function StudentDashboard() {
           const d = await res.json();
           if (d.isAuthorized && d.session?.id) {
             window.location.href = `/classroom/${d.session.id}?role=student`;
+          } else if (d.authorizationStatus && d.authorizationStatus !== sessionAuthStatus) {
+            setSessionAuthStatus(d.authorizationStatus);
+            if (d.followUpRequest) setFollowUpRequest(d.followUpRequest);
           }
         }
       } catch {}
@@ -156,37 +185,53 @@ export default function StudentDashboard() {
 
   const [requestingSession, setRequestingSession] = useState(false);
 
-  const handleStudent1ClickJoin = async (sessionId?: string, halaqaId?: string) => {
+  const handleStudentFollowUpRequest = async (sessionId?: string, halaqaId?: string) => {
     setRequestingSession(true);
     try {
-      const targetSessionId = sessionId || activeSession?.id || "auto";
-      const res = await fetch("/api/student/join-request", {
+      const targetSessionId = sessionId || activeSession?.id;
+      const res = await fetch("/api/classroom/followup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "REQUEST_FOLLOWUP",
           sessionId: targetSessionId,
-          halaqaId: halaqaId || activeSession?.halaqaId || halaqat[0]?.id,
-          acceptInvitation: true,
         }),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok && (d.isAuthorized || d.redirectTo)) {
-        window.location.href = d.redirectTo || `/classroom/${targetSessionId}?role=student`;
-        return;
-      }
       if (res.ok) {
         setSessionAuthStatus("PENDING_APPROVAL");
         fetchData();
       } else {
-        alert(d.error || "فشل إرسال طلب الانضمام");
+        alert(d.error || "فشل إرسال طلب المتابعة");
       }
     } catch (e) {
       console.error(e);
-      alert("حدث خطأ أثناء إرسال طلب الانضمام");
+      alert("حدث خطأ أثناء إرسال طلب المتابعة");
     } finally {
       setRequestingSession(false);
     }
   };
+
+  const handleProposalResponse = async (requestId: string, action: "ACCEPT" | "REJECT") => {
+    try {
+      const res = await fetch("/api/classroom/followup/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId, action }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        alert(d.message || "تم تسجيل ردك بنجاح");
+        fetchData();
+      } else {
+        alert(d.error || "فشل تسجيل الرد");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleStudent1ClickJoin = handleStudentFollowUpRequest;
 
   const profile = user?.studentProfile || {
     currentJuz: 0,
@@ -246,19 +291,47 @@ export default function StudentDashboard() {
                   <Video className="w-4 h-4" />
                   متابعة الحلقة 🎥
                 </Link>
-              ) : isActiveSessionPending ? (
+              ) : sessionAuthStatus === "PENDING_APPROVAL" ? (
                 <div className="flex items-center gap-2 bg-amber-500/20 text-amber-200 border border-amber-400/40 font-bold px-4 py-3 rounded-2xl text-xs">
                   <Clock className="w-4 h-4 text-amber-400 animate-spin" />
-                  في انتظار قبول الشيخ ⏳
+                  طلب المتابعة قيد مراجعة الشيخ ⏳
+                </div>
+              ) : sessionAuthStatus === "DEFERRED" ? (
+                <div className="flex items-center gap-2 bg-blue-500/20 text-blue-200 border border-blue-400/40 font-bold px-4 py-3 rounded-2xl text-xs">
+                  <Clock className="w-4 h-4 text-blue-300" />
+                  تم تعليق الطلب - الرد بعد الجلسة ⏳
+                </div>
+              ) : sessionAuthStatus === "PROPOSED_SLOT" ? (
+                <div className="flex items-center gap-2 bg-purple-950/80 border border-purple-400/60 p-2 rounded-2xl">
+                  <span className="text-[11px] font-bold text-purple-200">
+                    اقترح الشيخ موعداً: {followUpRequest?.proposedTime || followUpRequest?.slot?.startTime}
+                  </span>
+                  <button
+                    onClick={() => handleProposalResponse(followUpRequest?.id || followUpRequest?.requestId, "ACCEPT")}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-2.5 py-1.5 rounded-xl transition"
+                  >
+                    قبول ✅
+                  </button>
+                  <button
+                    onClick={() => handleProposalResponse(followUpRequest?.id || followUpRequest?.requestId, "REJECT")}
+                    className="bg-slate-800 hover:bg-red-800 text-slate-300 hover:text-white font-bold text-xs px-2 py-1.5 rounded-xl transition"
+                  >
+                    اعتذار ❌
+                  </button>
+                </div>
+              ) : sessionAuthStatus === "REJECTED" ? (
+                <div className="flex items-center gap-2 bg-red-500/20 text-red-200 border border-red-400/40 font-bold px-4 py-3 rounded-2xl text-xs">
+                  <XCircle className="w-4 h-4 text-red-400" />
+                  اعتذر الشيخ عن قبول المتابعة
                 </div>
               ) : (
                 <button
-                  onClick={() => handleStudent1ClickJoin(activeSession.id, activeSession.halaqaId)}
+                  onClick={() => handleStudentFollowUpRequest(activeSession.id)}
                   disabled={requestingSession}
-                  className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-black px-5 py-3 rounded-2xl text-xs shadow-lg transition-transform hover:scale-105 disabled:opacity-50"
+                  className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-black px-5 py-3 rounded-2xl text-xs shadow-lg transition-transform hover:scale-105 disabled:opacity-50 cursor-pointer"
                 >
-                  <UserPlus className="w-4 h-4" />
-                  {requestingSession ? "جارٍ إرسال الطلب..." : "طلب انضمام"}
+                  <Eye className="w-4 h-4" />
+                  {requestingSession ? "جارٍ إرسال الطلب..." : "طلب متابعة الجلسة 👁️"}
                 </button>
               )}
             </div>

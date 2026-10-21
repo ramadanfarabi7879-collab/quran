@@ -46,6 +46,7 @@ model TeacherProfile {
   assignments                   Assignment[]
   evaluations                   Evaluation[]
   memorizationRecords           MemorizationRecord[]
+  scheduleSlots                 TeacherScheduleSlot[]
 }
 
 model StudentProfile {
@@ -71,6 +72,7 @@ model StudentProfile {
   submissions         AssignmentSubmission[]
   memorizationRecords MemorizationRecord[]
   evaluations         Evaluation[]
+  followUpRequests    SessionFollowUpRequest[]
 }
 
 model Halaqa {
@@ -140,6 +142,7 @@ model LiveSession {
   mushafState  MushafSessionState?
   recordings   SessionRecording[]
   evaluations  Evaluation[]
+  followUpRequests SessionFollowUpRequest[]
 }
 
 model SessionAttendance {
@@ -345,4 +348,41 @@ model AuditLog {
   details   String?
   ip        String?
   createdAt DateTime @default(now())
+}
+
+model TeacherScheduleSlot {
+  id                String                 @id @default(cuid())
+  teacherId         String
+  teacher           TeacherProfile         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  title             String                 @default("جلسة تسميع فردية")
+  dayOfWeek         String?
+  date              DateTime?
+  startTime         String                 @default("16:00")
+  endTime           String                 @default("16:30")
+  durationMinutes   Int                    @default(30)
+  slotType          String                 @default("ONE_ON_ONE") // ONE_ON_ONE, HALAQA
+  isBooked          Boolean                @default(false)
+  bookedByStudentId String?
+  createdAt         DateTime               @default(now())
+
+  followUpRequests  SessionFollowUpRequest[]
+}
+
+model SessionFollowUpRequest {
+  id               String               @id @default(cuid())
+  sessionId        String
+  session          LiveSession          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          StudentProfile       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status           String               @default("PENDING") // PENDING, ACCEPTED, REJECTED, DEFERRED, PROPOSED, CONFIRMED
+  decisionNotes    String?
+  rejectReason     String?
+  proposedSlotId   String?
+  proposedSlot     TeacherScheduleSlot? @relation(fields: [proposedSlotId], references: [id], onDelete: SetNull)
+  proposedDate     DateTime?
+  proposedTime     String?
+  proposedDuration Int?                 @default(30)
+  proposedType     String?              @default("ONE_ON_ONE") // ONE_ON_ONE, HALAQA
+  createdAt        DateTime             @default(now())
+  reviewedAt       DateTime?
 }

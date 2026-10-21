@@ -31,6 +31,10 @@ import {
   UserCheck,
   Bell,
   X,
+  Calendar,
+  Eye,
+  XCircle,
+  Plus,
 } from "lucide-react";
 import { playTeacherJoinAlertSound, playStudentApprovedSound } from "@/lib/sound";
 
@@ -145,7 +149,10 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [authStatus, setAuthStatus] = useState<"CHECKING" | "AUTHORIZED" | "PENDING_APPROVAL" | "NEEDS_REQUEST" | "REJECTED">("CHECKING");
+  const [authStatus, setAuthStatus] = useState<
+    "CHECKING" | "AUTHORIZED" | "PENDING_APPROVAL" | "NEEDS_REQUEST" | "DEFERRED" | "PROPOSED_SLOT" | "REJECTED"
+  >("CHECKING");
+  const [followUpRequestData, setFollowUpRequestData] = useState<any>(null);
   const [halaqaInfo, setHalaqaInfo] = useState<{ name: string; teacherName: string; id: string }>({
     name: "حلقة التحفيظ والتجويد",
     teacherName: "فضيلة المعلم",
@@ -154,9 +161,24 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [requestSuccessMsg, setRequestSuccessMsg] = useState("");
 
-  // Media toggles
+  // Sheikh Follow-up Request Decision System
+  const [pendingFollowUpRequests, setPendingFollowUpRequests] = useState<any[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  const [selectedFollowUpSlotId, setSelectedFollowUpSlotId] = useState<string>("");
+  const [showNewSlotModal, setShowNewSlotModal] = useState<boolean>(false);
+  const [targetFollowUpForNewSlot, setTargetFollowUpForNewSlot] = useState<any>(null);
+  const [newSlotTitle, setNewSlotTitle] = useState("جلسة تسميع فردية خاصة");
+  const [newSlotDate, setNewSlotDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [newSlotTime, setNewSlotTime] = useState("17:00");
+  const [newSlotDuration, setNewSlotDuration] = useState("30");
+  const [newSlotType, setNewSlotType] = useState<"ONE_ON_ONE" | "HALAQA">("ONE_ON_ONE");
+  const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
+
+  // Media toggles & Remote Media State Tracking
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
+  const [remoteIsVideoOn, setRemoteIsVideoOn] = useState(true);
+  const [remoteIsMicOn, setRemoteIsMicOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -281,7 +303,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     fetchSession();
   }, [fetchSession]);
 
-  // Realtime listener for approval updates
+  // Realtime listener for approval updates & follow-up decisions
   useEffect(() => {
     if (!lastEvent) return;
 
@@ -305,6 +327,35 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         fetchSession();
       }
     }
+
+    if (lastEvent.type === "SESSION_FOLLOWUP_REQUESTED" && isTeacher) {
+      playTeacherJoinAlertSound();
+      setPendingFollowUpRequests((prev) => {
+        if (prev.some((r) => r.requestId === lastEvent.payload?.requestId)) return prev;
+        return [...prev, lastEvent.payload];
+      });
+      fetchAvailableSlots();
+    }
+
+    if (lastEvent.type === "SESSION_FOLLOWUP_DECIDED" && !isTeacher) {
+      if (lastEvent.payload?.decision === "ACCEPTED") {
+        playStudentApprovedSound();
+        setAuthStatus("AUTHORIZED");
+        setCanSpeak(false);
+        setIsMicOn(false);
+      } else if (lastEvent.payload?.decision === "DEFERRED") {
+        setAuthStatus("DEFERRED");
+      } else if (lastEvent.payload?.decision === "REJECTED") {
+        setAuthStatus("REJECTED");
+      }
+      fetchSession();
+    }
+
+    if (lastEvent.type === "SESSION_FOLLOWUP_SLOT_PROPOSED" && !isTeacher) {
+      setAuthStatus("PROPOSED_SLOT");
+      setFollowUpRequestData(lastEvent.payload);
+      fetchSession();
+    }
   }, [lastEvent, isTeacher, fetchSession]);
 
   // Fallback poll while student is waiting on approval (every 2.5s)
@@ -318,7 +369,14 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           if (data.isAuthorized) {
             playStudentApprovedSound();
             setAuthStatus("AUTHORIZED");
+            setCanSpeak(false);
+            setIsMicOn(false);
             setSession(data.session);
+          } else if (data.authorizationStatus && data.authorizationStatus !== authStatus) {
+            setAuthStatus(data.authorizationStatus);
+            if (data.followUpRequest) {
+              setFollowUpRequestData(data.followUpRequest);
+            }
           }
         }
       } catch {}
@@ -326,26 +384,89 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     return () => clearInterval(interval);
   }, [authStatus, isTeacher, sessionId, roleParam]);
 
-  // Handle submitting join request
-  const handleSendJoinRequestFromGate = async () => {
-    const targetHalaqaId = halaqaInfo.id || session?.halaqaId || session?.halaqa?.id;
-    setSubmittingRequest(true);
+  // Fetch Sheikh's available unbooked slots
+  const fetchAvailableSlots = useCallback(async () => {
     try {
-      const res = await fetch("/api/student/join-request", {
+      const res = await fetch("/api/teacher/slots");
+      if (res.ok) {
+        const data = await res.json();
+        const slots = data.slots || [];
+        setAvailableSlots(slots);
+        if (slots.length > 0 && !selectedFollowUpSlotId) {
+          setSelectedFollowUpSlotId(slots[0].id);
+        }
+      }
+    } catch (e) {
+      console.error("fetchAvailableSlots error:", e);
+    }
+  }, [selectedFollowUpSlotId]);
+
+  useEffect(() => {
+    if (isTeacher) {
+      fetchAvailableSlots();
+    }
+  }, [isTeacher, fetchAvailableSlots]);
+
+  // Handle Sheikh decision on student follow-up request
+  const handleSheikhDecision = async (
+    requestId: string,
+    decision: "ACCEPT_NOW" | "REJECT" | "DEFER" | "PROPOSE_EXISTING_SLOT" | "CREATE_AND_PROPOSE_SLOT",
+    extra: any = {}
+  ) => {
+    setIsSubmittingDecision(true);
+    try {
+      const res = await fetch("/api/classroom/followup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          halaqaId: targetHalaqaId,
+          action: "DECISION",
+          requestId,
+          decision,
+          ...extra,
+        }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        if (d.warning) {
+          if (window.confirm(d.message)) {
+            return handleSheikhDecision(requestId, "ACCEPT_NOW", { forceAccept: true });
+          }
+          return;
+        }
+        alert(d.message);
+        setPendingFollowUpRequests((prev) => prev.filter((r) => r.requestId !== requestId));
+        setShowNewSlotModal(false);
+        fetchSession();
+      } else {
+        alert(d.error || "فشل تنفيذ القرار");
+      }
+    } catch (e) {
+      console.error("Sheikh decision error:", e);
+      alert("حدث خطأ أثناء إرسال القرار");
+    } finally {
+      setIsSubmittingDecision(false);
+    }
+  };
+
+  // Handle Student submitting follow-up request from classroom gate
+  const handleSendFollowUpRequestFromGate = async () => {
+    setSubmittingRequest(true);
+    try {
+      const res = await fetch("/api/classroom/followup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "REQUEST_FOLLOWUP",
           sessionId: session?.id || sessionId,
         }),
       });
 
       if (res.ok) {
         setAuthStatus("PENDING_APPROVAL");
-        setRequestSuccessMsg("تم رفع طلب الانضمام إلى فضيلة الشيخ بنجاح، وهو قيد المراجعة والاعتماد.");
+        setRequestSuccessMsg("تم رفع طلب متابعة الجلسة إلى فضيلة الشيخ بنجاح، وهو قيد المراجعة والاعتماد.");
       } else {
         const d = await res.json();
-        alert(d.error || "فشل إرسال طلب الانضمام");
+        alert(d.error || "فشل إرسال طلب المتابعة");
       }
     } catch (err) {
       console.error(err);
@@ -353,6 +474,32 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     } finally {
       setSubmittingRequest(false);
     }
+  };
+
+  // Handle student responding to proposed slot
+  const handleStudentRespondToProposedSlot = async (action: "ACCEPT" | "REJECT") => {
+    try {
+      const reqId = followUpRequestData?.requestId || followUpRequestData?.id;
+      const res = await fetch("/api/classroom/followup/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: reqId, action }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        alert(d.message);
+        fetchSession();
+      } else {
+        alert(d.error || "حدث خطأ");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Handle legacy join request from gate if needed
+  const handleSendJoinRequestFromGate = async () => {
+    return handleSendFollowUpRequestFromGate();
   };
 
   // Auto-record student attendance check-in
@@ -394,16 +541,42 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     [session?.id, sessionId, myRole, myName, clientId]
   );
 
-  // Sync local tracks with RTCPeerConnection
+  // Sync local tracks with RTCPeerConnection safely
   const syncLocalTracks = useCallback((pc: RTCPeerConnection) => {
     if (!localStreamRef.current) return;
-    const senders = pc.getSenders();
-    localStreamRef.current.getTracks().forEach((track) => {
-      const existingSender = senders.find((s) => s.track && s.track.kind === track.kind);
-      if (existingSender) {
-        existingSender.replaceTrack(track).catch((err) => {
-          console.warn("replaceTrack error:", err);
+    const localTracks = localStreamRef.current.getTracks();
+    const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+
+    localTracks.forEach((track) => {
+      let matchedSender: RTCRtpSender | null = null;
+
+      // 1. Search transceivers matching this track's kind explicitly
+      if (transceivers.length > 0) {
+        const t = transceivers.find((tr) => {
+          const receiverKind = tr.receiver?.track?.kind;
+          const senderTrackKind = tr.sender?.track?.kind;
+          return receiverKind === track.kind || senderTrackKind === track.kind;
         });
+        if (t && t.sender) {
+          matchedSender = t.sender;
+          if (t.direction === "recvonly") {
+            t.direction = "sendrecv";
+          }
+        }
+      }
+
+      // 2. Fallback to getSenders() with matching track kind
+      if (!matchedSender) {
+        const senders = pc.getSenders();
+        matchedSender = senders.find((s) => s.track && s.track.kind === track.kind) || null;
+      }
+
+      if (matchedSender) {
+        if (matchedSender.track !== track) {
+          matchedSender.replaceTrack(track).catch((err) => {
+            console.warn("replaceTrack error:", err);
+          });
+        }
       } else {
         try {
           pc.addTrack(track, localStreamRef.current!);
@@ -414,7 +587,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     });
   }, []);
 
-  // Dedicated Offer Trigger with state guards
+  // Dedicated Offer Trigger with state guards and immediate offer recovery
   const triggerOffer = useCallback(
     async (targetId: string | null, reason: string) => {
       if (!isTeacher) return;
@@ -422,6 +595,13 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       if (!pc || pc.signalingState === "closed") return;
 
       syncLocalTracks(pc);
+
+      // If already in have-local-offer, re-send the existing local description immediately to target
+      if (pc.signalingState === "have-local-offer" && pc.localDescription) {
+        console.log("Teacher resending existing local offer to target:", targetId, "Reason:", reason);
+        await sendSignalingMessage("OFFER", pc.localDescription, targetId);
+        return;
+      }
 
       if (pc.signalingState !== "stable") {
         console.log("Offer delayed: signalingState is currently", pc.signalingState);
@@ -727,14 +907,18 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         if (signalType === "PRESENCE") {
           remoteClientIdRef.current = senderClientId;
           setConnectionStatus("تم رصد الطرف الآخر - جارٍ التوصيل...");
+          if (data?.video !== undefined) setRemoteIsVideoOn(Boolean(data.video));
+          if (data?.mic !== undefined) setRemoteIsMicOn(Boolean(data.mic));
           if (isTeacher) {
             triggerOffer(senderClientId, "PRESENCE_RECEIVED");
           } else {
-            sendSignalingMessage("PRESENCE_ACK", { role: myRole, name: myName }, senderClientId);
+            sendSignalingMessage("PRESENCE_ACK", { role: myRole, name: myName, video: isVideoOn, mic: isMicOn }, senderClientId);
           }
         } else if (signalType === "PRESENCE_ACK") {
           remoteClientIdRef.current = senderClientId;
           setConnectionStatus("تم الرد من الطرف الآخر - جارٍ إرسال العرض...");
+          if (data?.video !== undefined) setRemoteIsVideoOn(Boolean(data.video));
+          if (data?.mic !== undefined) setRemoteIsMicOn(Boolean(data.mic));
           if (isTeacher) {
             triggerOffer(senderClientId, "PRESENCE_ACK_RECEIVED");
           }
@@ -783,8 +967,11 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             iceCandidatesQueue.current.push(data);
           }
         } else if (signalType === "MEDIA_STATE" && data) {
+          if (data.video !== undefined) {
+            setRemoteIsVideoOn(Boolean(data.video));
+          }
           if (data.mic !== undefined) {
-            // Track remote participant mute status
+            setRemoteIsMicOn(Boolean(data.mic));
           }
         } else if (signalType === "CHAT_MESSAGE" && data) {
           setChatMessages((prev) => [
@@ -834,9 +1021,19 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             if (data.targetClientId && data.targetClientId !== clientId) return;
             if (data.granted) {
               setCanSpeak(true);
+              setIsMicOn(true);
               setSpeakRequestStatus("GRANTED");
-              setSpeakNotice("منحك فضيلة الشيخ إذن التحدث بالميكروفون 🎙️ - يمكنك الآن تشغيل المايك");
+              setSpeakNotice("منحك فضيلة الشيخ إذن التحدث بالميكروفون 🎙️ - تم تفعيل المايك بنجاح");
               playStudentApprovedSound();
+
+              // Cleanly enable audio track without touching video or resetting connection
+              if (localStreamRef.current) {
+                localStreamRef.current.getAudioTracks().forEach((track) => {
+                  track.enabled = true;
+                });
+              }
+
+              sendSignalingMessage("MEDIA_STATE", { mic: true, video: isVideoOn });
               setTimeout(() => setSpeakNotice(null), 7000);
             } else {
               setCanSpeak(false);
@@ -856,8 +1053,18 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                 track.enabled = false;
               });
             }
+            sendSignalingMessage("MEDIA_STATE", { mic: false, video: isVideoOn });
             setSpeakNotice("قام فضيلة الشيخ بسحب إذن التحدث وكتم الميكروفون.");
             setTimeout(() => setSpeakNotice(null), 5000);
+          }
+        } else if (signalType === "SESSION_FOLLOWUP_REQUESTED" && data) {
+          if (isTeacher) {
+            playTeacherJoinAlertSound();
+            setPendingFollowUpRequests((prev) => {
+              if (prev.some((r) => r.requestId === data.requestId)) return prev;
+              return [...prev, data];
+            });
+            fetchAvailableSlots();
           }
         } else if (signalType === "RECORDING_STATE" && data) {
           setRemoteIsRecording(Boolean(data.isRecording));
@@ -920,20 +1127,27 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     };
   }, [sessionId, session?.id, myRole, isTeacher, clientId, hasRemoteStream, handleSignalMessage, sendSignalingMessage, triggerOffer, myName]);
 
-  // Keep remote media elements attached to active remote stream
+  // Keep local and remote media elements continuously attached to active streams
   useEffect(() => {
-    if (hasRemoteStream && remoteStreamRef.current) {
-      const stream = remoteStreamRef.current;
-      if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== stream) {
-        remoteVideoRef.current.srcObject = stream;
+    if (localVideoRef.current && localStreamRef.current) {
+      if (localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+        localVideoRef.current.play().catch(() => {});
+      }
+    }
+    if (remoteVideoRef.current && remoteStreamRef.current) {
+      if (remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
         remoteVideoRef.current.play().catch(() => {});
       }
-      if (remoteAudioRef.current && remoteAudioRef.current.srcObject !== stream) {
-        remoteAudioRef.current.srcObject = stream;
+    }
+    if (remoteAudioRef.current && remoteStreamRef.current) {
+      if (remoteAudioRef.current.srcObject !== remoteStreamRef.current) {
+        remoteAudioRef.current.srcObject = remoteStreamRef.current;
         remoteAudioRef.current.play().catch(() => setNeedsAudioUnlock(true));
       }
     }
-  }, [hasRemoteStream]);
+  }, [hasRemoteStream, isTeacher, isVideoOn, authStatus]);
 
   // Ambient user interaction audio unlocker for mobile browsers
   useEffect(() => {
@@ -1382,6 +1596,250 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         </div>
       )}
 
+      {/* Teacher Session Follow-up Requests Floating Decision Bar */}
+      {isTeacher && pendingFollowUpRequests.length > 0 && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-[95%] animate-in slide-in-from-top duration-300">
+          <div className="bg-slate-900/98 text-white rounded-3xl p-4 sm:p-5 shadow-2xl border-2 border-emerald-500/90 backdrop-blur-md space-y-3.5">
+            {/* Header with Student Info */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">
+                  <Eye className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      طلب متابعة جلسة مباشرة 👁️
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      توقيت الطلب: {pendingFollowUpRequests[0].requestTime || "الآن"}
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-black text-white mt-0.5">
+                    الطالب: <strong className="text-emerald-300">{pendingFollowUpRequests[0].studentName || "طالب العلم"}</strong> ({pendingFollowUpRequests[0].studentNumber || "طالب"})
+                  </h4>
+                  <span className="text-[10px] text-slate-400 block">
+                    الجلسة: {pendingFollowUpRequests[0].sessionTitle || pendingFollowUpRequests[0].halaqaName || session?.halaqa?.name}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setPendingFollowUpRequests((prev) => prev.slice(1))}
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg"
+                title="إخفاء التنبيه مؤقتاً"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* 5 Distinct Actions for the Sheikh */}
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {/* Decision 1: Accept Now (Muted) */}
+                <button
+                  onClick={() => handleSheikhDecision(pendingFollowUpRequests[0].requestId, "ACCEPT_NOW")}
+                  disabled={isSubmittingDecision}
+                  className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-2 px-3 rounded-xl shadow-lg transition active:scale-95 cursor-pointer disabled:opacity-50"
+                  title="قبول الطالب الآن في الجلسة ويدخل بصوت مكتوم"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>1. قبول الآن (صامت) ✅</span>
+                </button>
+
+                {/* Decision 2: Reject */}
+                <button
+                  onClick={() => {
+                    const r = window.prompt("سبب الاعتذار (اختياري):", "اعتذر الشيخ لاكتمال الحضور");
+                    handleSheikhDecision(pendingFollowUpRequests[0].requestId, "REJECT", { reason: r || undefined });
+                  }}
+                  disabled={isSubmittingDecision}
+                  className="flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-red-900 text-red-300 hover:text-white font-bold text-xs py-2 px-3 rounded-xl border border-slate-700 transition cursor-pointer disabled:opacity-50"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>2. رفض الطلب ❌</span>
+                </button>
+
+                {/* Decision 3: Defer / Reply Later */}
+                <button
+                  onClick={() => handleSheikhDecision(pendingFollowUpRequests[0].requestId, "DEFER")}
+                  disabled={isSubmittingDecision}
+                  className="flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-blue-900 text-blue-300 hover:text-white font-bold text-xs py-2 px-3 rounded-xl border border-slate-700 transition cursor-pointer disabled:opacity-50"
+                >
+                  <Clock className="w-4 h-4" />
+                  <span>3. تعليق والرد لاحقاً ⏳</span>
+                </button>
+              </div>
+
+              {/* Decisions 4 & 5: Propose Existing Slot OR Create New Slot */}
+              <div className="bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>4. اقتراح موعد متاح بالفعل في جدولك:</span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      setTargetFollowUpForNewSlot(pendingFollowUpRequests[0]);
+                      setShowNewSlotModal(true);
+                    }}
+                    className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>5. إنشاء موعد جديد مخصص</span>
+                  </button>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <select
+                    value={selectedFollowUpSlotId}
+                    onChange={(e) => setSelectedFollowUpSlotId(e.target.value)}
+                    className="w-full sm:flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
+                  >
+                    {availableSlots.length === 0 ? (
+                      <option value="">لا توجد مواعيد متاحة حالياً - أنشئ موعداً جديداً</option>
+                    ) : (
+                      availableSlots.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.title} ({s.dayOfWeek || "الموعد"} {s.startTime} - {s.endTime})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <button
+                    onClick={() => {
+                      if (!selectedFollowUpSlotId) {
+                        alert("يرجى اختيار موعد متاح أولاً");
+                        return;
+                      }
+                      handleSheikhDecision(pendingFollowUpRequests[0].requestId, "PROPOSE_EXISTING_SLOT", {
+                        slotId: selectedFollowUpSlotId,
+                      });
+                    }}
+                    disabled={isSubmittingDecision || !selectedFollowUpSlotId}
+                    className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl transition disabled:opacity-50 shrink-0 cursor-pointer"
+                  >
+                    إرسال الموعد المقترح للطالب ✉️
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sheikh Create New Appointment Slot Modal (Option 5) */}
+      {showNewSlotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-right">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">5. إنشاء واقتراح موعد جديد للطالب</h3>
+                  <p className="text-[10px] text-slate-400">تحديد موعد مخصص وفحص التعارض مع جدول الشيخ</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowNewSlotModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1 font-bold">عنوان الجلسة / الغرض:</label>
+                <input
+                  type="text"
+                  value={newSlotTitle}
+                  onChange={(e) => setNewSlotTitle(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-bold">التاريخ:</label>
+                  <input
+                    type="date"
+                    value={newSlotDate}
+                    onChange={(e) => setNewSlotDate(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-bold">وقت البداية:</label>
+                  <input
+                    type="time"
+                    value={newSlotTime}
+                    onChange={(e) => setNewSlotTime(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-bold">المدة بالدقائق:</label>
+                  <select
+                    value={newSlotDuration}
+                    onChange={(e) => setNewSlotDuration(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="15">15 دقيقة</option>
+                    <option value="30">30 دقيقة</option>
+                    <option value="45">45 دقيقة</option>
+                    <option value="60">60 دقيقة</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-bold">نوع الجلسة:</label>
+                  <select
+                    value={newSlotType}
+                    onChange={(e) => setNewSlotType(e.target.value as any)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="ONE_ON_ONE">جلسة فردية خاصة</option>
+                    <option value="HALAQA">حلقة جماعية</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowNewSlotModal(false)}
+                className="px-4 py-2 rounded-xl text-slate-400 hover:text-white font-bold text-xs"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingDecision}
+                onClick={() => {
+                  if (!targetFollowUpForNewSlot) return;
+                  handleSheikhDecision(targetFollowUpForNewSlot.requestId, "CREATE_AND_PROPOSE_SLOT", {
+                    slotTitle: newSlotTitle,
+                    slotDate: newSlotDate,
+                    startTime: newSlotTime,
+                    durationMinutes: newSlotDuration,
+                    slotType: newSlotType,
+                  });
+                }}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>حفظ واقتراح الموعد للطالب فوراً</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Teacher Speak Requests Floating Bar */}
       {isTeacher && pendingSpeakRequests.length > 0 && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 max-w-lg w-[95%] animate-in slide-in-from-top duration-200">
@@ -1454,27 +1912,48 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         </div>
       )}
 
-      {/* Non-blocking Status Ribbon for Student pending sheikh approval */}
+      {/* Non-blocking Status Ribbon for Student pending sheikh approval / follow-up */}
       {!isTeacher && authStatus !== "AUTHORIZED" && (
-        <div className="bg-amber-950/90 border-b border-amber-500/50 px-4 py-2 text-amber-300 text-xs font-bold flex flex-wrap items-center justify-between gap-2 z-40 backdrop-blur-md">
+        <div className="bg-amber-950/90 border-b border-amber-500/50 px-4 py-2.5 text-amber-300 text-xs font-bold flex flex-wrap items-center justify-between gap-2 z-40 backdrop-blur-md">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
             <span>
               {authStatus === "PENDING_APPROVAL"
-                ? "طلب انضمامك قيد موافقة واعتماد فضيلة الشيخ ⏳"
+                ? "طلب متابعة الجلسة قيد مراجعة واعتماد فضيلة الشيخ ⏳"
+                : authStatus === "DEFERRED"
+                ? "تم تعليق طلبك لمراجعته والتواصل معك بعد انتهاء الجلسة ⏳"
+                : authStatus === "PROPOSED_SLOT"
+                ? `يقترح عليك الشيخ موعداً بديلاً: ${followUpRequestData?.proposedTime || followUpRequestData?.slot?.startTime || "موعد لاحق"}`
                 : authStatus === "REJECTED"
-                ? "اعتذر الشيخ عن قبول الانضمام لاكتمال النصاب المحدد"
-                : "الحلقة مخصصة للطلاب المعتمدين"}
+                ? "اعتذر الشيخ عن قبول المتابعة للجلسة الحالية"
+                : "الجلسة منعقدة حالياً مع الشيخ. يمكنك رفع طلب لمتابعة الجلسة."}
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {authStatus === "PROPOSED_SLOT" && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleStudentRespondToProposedSlot("ACCEPT")}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] px-3 py-1 rounded-lg transition shadow"
+                >
+                  قبول الموعد المقترح ✅
+                </button>
+                <button
+                  onClick={() => handleStudentRespondToProposedSlot("REJECT")}
+                  className="bg-slate-800 hover:bg-red-800 text-slate-300 hover:text-white font-bold text-[11px] px-3 py-1 rounded-lg transition"
+                >
+                  اعتذار ❌
+                </button>
+              </div>
+            )}
             {authStatus === "NEEDS_REQUEST" && (
               <button
-                onClick={handleSendJoinRequestFromGate}
+                onClick={handleSendFollowUpRequestFromGate}
                 disabled={submittingRequest}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] px-3 py-1 rounded-lg transition"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] px-3.5 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow"
               >
-                {submittingRequest ? "جارٍ الإرسال..." : "طلب انضمام للحلقة"}
+                <Eye className="w-3.5 h-3.5" />
+                <span>{submittingRequest ? "جارٍ الإرسال..." : "طلب متابعة الجلسة 👁️"}</span>
               </button>
             )}
             <button
@@ -1623,6 +2102,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                 // Teacher screen: show Teacher's local camera
                 <>
                   <video
+                    key="teacher-local-preview"
                     ref={localVideoRef}
                     autoPlay
                     playsInline
@@ -1646,15 +2126,16 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                 // Student screen: show Teacher's remote stream
                 <>
                   <video
+                    key="teacher-remote-preview"
                     ref={remoteVideoRef}
                     autoPlay
                     playsInline
                     muted
                     className={`w-full h-full object-cover ${
-                      hasRemoteStream && remoteHasVideo ? "block" : "hidden"
+                      hasRemoteStream && remoteHasVideo && remoteIsVideoOn ? "block" : "hidden"
                     }`}
                   />
-                  {(!hasRemoteStream || !remoteHasVideo) && (
+                  {(!hasRemoteStream || !remoteHasVideo || !remoteIsVideoOn) && (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-center p-2">
                       <div className="w-12 h-12 rounded-2xl bg-islamic-800 text-gold-accent flex items-center justify-center font-black text-sm ring-2 ring-emerald-500/50 mb-1 shadow">
                         ش
@@ -1699,6 +2180,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                 // Student screen: show Student's local camera
                 <>
                   <video
+                    key="student-local-preview"
                     ref={localVideoRef}
                     autoPlay
                     playsInline
@@ -1722,15 +2204,16 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
                 // Teacher screen: show Student's remote stream
                 <>
                   <video
+                    key="student-remote-preview"
                     ref={remoteVideoRef}
                     autoPlay
                     playsInline
                     muted
                     className={`w-full h-full object-cover ${
-                      hasRemoteStream && remoteHasVideo ? "block" : "hidden"
+                      hasRemoteStream && remoteHasVideo && remoteIsVideoOn ? "block" : "hidden"
                     }`}
                   />
-                  {(!hasRemoteStream || !remoteHasVideo) && (
+                  {(!hasRemoteStream || !remoteHasVideo || !remoteIsVideoOn) && (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-center p-2">
                       <div className="w-12 h-12 rounded-2xl bg-slate-800 text-amber-300 flex items-center justify-center font-black text-sm ring-2 ring-gold-accent/50 mb-1 shadow">
                         ط

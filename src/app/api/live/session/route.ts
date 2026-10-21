@@ -135,6 +135,7 @@ export async function GET(req: Request) {
 
     let isAuthorized = false;
     let authorizationStatus = "UNAUTHENTICATED"; // "AUTHORIZED" | "PENDING_APPROVAL" | "NEEDS_REQUEST" | "REJECTED" | "UNAUTHENTICATED"
+    let followUpReq: any = null;
 
     if (effectiveUser) {
       if (effectiveUser.role === "TEACHER" || effectiveUser.role === "ADMIN" || session?.halaqa?.teacher?.userId === effectiveUser.id) {
@@ -154,32 +155,44 @@ export async function GET(req: Request) {
             e.student?.userId === effectiveUser.id
         );
 
-        if (sessionAtt?.isVerifiedByTeacher || sessionAtt?.status === "PRESENT" || isEnrolled) {
-          // Student was verified by the Sheikh, already present, or is enrolled in this halaqa - enters directly!
+        // Check if student has a SessionFollowUpRequest
+        if (studentProfileId) {
+          followUpReq = await prisma.sessionFollowUpRequest.findFirst({
+            where: {
+              sessionId: session.id,
+              studentId: studentProfileId,
+            },
+            orderBy: { createdAt: "desc" },
+            include: { proposedSlot: true },
+          });
+        }
+
+        if (sessionAtt?.isVerifiedByTeacher || sessionAtt?.status === "PRESENT" || followUpReq?.status === "ACCEPTED") {
           isAuthorized = true;
           authorizationStatus = "AUTHORIZED";
-        } else if (sessionAtt?.requestedCheckIn) {
-          // Non-enrolled student clicked "طلب انضمام" and is waiting for Sheikh's acceptance
+        } else if (followUpReq?.status === "PROPOSED") {
+          isAuthorized = false;
+          authorizationStatus = "PROPOSED_SLOT";
+        } else if (followUpReq?.status === "DEFERRED") {
+          isAuthorized = false;
+          authorizationStatus = "DEFERRED";
+        } else if (followUpReq?.status === "REJECTED") {
+          isAuthorized = false;
+          authorizationStatus = "REJECTED";
+        } else if (followUpReq?.status === "PENDING" || sessionAtt?.requestedCheckIn) {
           isAuthorized = false;
           authorizationStatus = "PENDING_APPROVAL";
         } else {
-          const hasPending = session.halaqa.joinRequests?.some(
+          // If session is active with existing participants and student hasn't been approved yet:
+          const hasPendingHalaqa = session.halaqa.joinRequests?.some(
             (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "PENDING"
           );
-          if (hasPending) {
+          if (hasPendingHalaqa) {
             isAuthorized = false;
             authorizationStatus = "PENDING_APPROVAL";
           } else {
-            const hasRejected = session.halaqa.joinRequests?.some(
-              (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "REJECTED"
-            );
-            if (hasRejected) {
-              isAuthorized = false;
-              authorizationStatus = "REJECTED";
-            } else {
-              isAuthorized = false;
-              authorizationStatus = "NEEDS_REQUEST";
-            }
+            isAuthorized = false;
+            authorizationStatus = "NEEDS_REQUEST";
           }
         }
       }
@@ -189,6 +202,7 @@ export async function GET(req: Request) {
       session,
       isAuthorized,
       authorizationStatus,
+      followUpRequest: followUpReq,
       teacherName: session?.halaqa?.teacher?.user?.name || "معلم ومقرئ الحلقة",
       halaqaName: session?.halaqa?.name || "",
       halaqaId: session?.halaqaId || session?.halaqa?.id || "",
