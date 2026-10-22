@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useAuth, useRealtime } from "@/components/providers/AppProviders";
+import { useAuth } from "@/components/providers/AppProviders";
 import { playStudentApprovedSound, playScheduleAlertSound, playHalaqaStartSound } from "@/lib/sound";
 import {
   Bell,
@@ -38,45 +38,12 @@ const DECISION_TYPES = new Set([
 
 export function StudentDecisionOverlay() {
   const { user } = useAuth();
-  const { lastEvent } = useRealtime();
   const isTeacherPath = typeof window !== "undefined" && (window.location.pathname.startsWith("/teacher") || window.location.search.includes("role=teacher"));
   const isStudent = (user?.role !== "TEACHER" && user?.role !== "ADMIN" && !isTeacherPath);
 
   const [activeNotification, setActiveNotification] = useState<StudentNotification | null>(null);
   const [joining, setJoining] = useState(false);
   const seenIdsRef = React.useRef<Set<string>>(new Set());
-
-  // Listen to instant real-time events for live sessions
-  useEffect(() => {
-    if (lastEvent) {
-      if (lastEvent.type === "HALAQA_LIVE_STARTED" && lastEvent.payload) {
-        const p = lastEvent.payload;
-        const liveId = `live-${p.sessionId}`;
-        if (!seenIdsRef.current.has(liveId)) {
-          seenIdsRef.current.add(liveId);
-          setActiveNotification({
-            id: liveId,
-            type: "HALAQA_STARTING",
-            title: `بدأت الحلقة الآن: ${p.halaqaName || "حلقة القرآن الكريم"}`,
-            body: `فضيلة ${p.teacherName || "الشيخ"} في انتظارك في الغرفة الافتراضية، اضغط للانضمام مباشرة.`,
-            link: `/classroom/${p.sessionId}?role=student`,
-            createdAt: new Date().toISOString(),
-          });
-          playHalaqaStartSound();
-        }
-      } else if (lastEvent.type === "HALAQA_LIVE_ENDED") {
-        if (activeNotification?.type === "HALAQA_STARTING" || activeNotification?.type === "SESSION_STARTED") {
-          setActiveNotification(null);
-        }
-      } else if (lastEvent.type === "SESSION_JOIN_APPROVED" || lastEvent.type === "JOIN_REQUEST_APPROVED") {
-        const p = lastEvent.payload;
-        if (p?.sessionId) {
-          playStudentApprovedSound();
-          window.location.href = `/classroom/${p.sessionId}?role=student`;
-        }
-      }
-    }
-  }, [lastEvent, activeNotification]);
 
   // PeerJS Direct Instant Listener for Real-Time Sheikh Decisions (<50ms)
   useEffect(() => {

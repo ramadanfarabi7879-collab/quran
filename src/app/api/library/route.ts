@@ -63,12 +63,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    let user = await getCurrentUser();
+    const user = await getCurrentUser();
     if (!user || user.role === "STUDENT") {
-      const teacher = await prisma.user.findFirst({ where: { role: "TEACHER" } });
-      if (teacher) user = teacher as any;
-    }
-    if (!user || (user.role !== "TEACHER" && user.role !== "ADMIN")) {
       return NextResponse.json({ error: "غير مصرح للمعلم فقط" }, { status: 403 });
     }
 
@@ -107,69 +103,5 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Create library book error:", error);
     return NextResponse.json({ error: "فشل إضافة الكتاب للمكتبة" }, { status: 500 });
-  }
-}
-
-export async function PUT(req: Request) {
-  try {
-    let user = await getCurrentUser();
-    if (!user || user.role === "STUDENT") {
-      const teacher = await prisma.user.findFirst({ where: { role: "TEACHER" } });
-      if (teacher) user = teacher as any;
-    }
-    if (!user || (user.role !== "TEACHER" && user.role !== "ADMIN")) {
-      return NextResponse.json({ error: "غير مصرح للمعلم فقط" }, { status: 403 });
-    }
-
-    const body = await req.json();
-    const { id, title, author, category, description, pagesCount } = body;
-
-    if (!id || !title) {
-      return NextResponse.json({ error: "معرف الكتاب وعنوانه مطلوبان" }, { status: 400 });
-    }
-
-    const updated = await prisma.libraryBook.update({
-      where: { id },
-      data: {
-        title: title.trim(),
-        ...(author && { author: author.trim() }),
-        ...(category && { category: category.trim() }),
-        ...(description !== undefined && { description: description.trim() }),
-        ...(pagesCount && { pagesCount: Math.max(1, parseInt(String(pagesCount), 10) || 1) }),
-      },
-    });
-
-    return NextResponse.json({ success: true, book: updated });
-  } catch (error) {
-    console.error("Update library book error:", error);
-    return NextResponse.json({ error: "فشل تعديل بيانات الكتاب" }, { status: 500 });
-  }
-}
-
-export async function DELETE(req: Request) {
-  try {
-    let user = await getCurrentUser();
-    if (!user || user.role === "STUDENT") {
-      const teacher = await prisma.user.findFirst({ where: { role: "TEACHER" } });
-      if (teacher) user = teacher as any;
-    }
-    if (!user || (user.role !== "TEACHER" && user.role !== "ADMIN")) {
-      return NextResponse.json({ error: "غير مصرح للمعلم فقط" }, { status: 403 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ error: "معرف الكتاب مطلوب" }, { status: 400 });
-    }
-
-    await prisma.halaqaBook.deleteMany({ where: { bookId: id } });
-    await prisma.libraryBook.delete({ where: { id } });
-
-    return NextResponse.json({ success: true, message: "تم حذف الكتاب بنجاح" });
-  } catch (error) {
-    console.error("Delete library book error:", error);
-    return NextResponse.json({ error: "فشل حذف الكتاب" }, { status: 500 });
   }
 }

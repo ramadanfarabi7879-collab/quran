@@ -108,7 +108,7 @@ export async function POST(req: Request) {
     );
 
     // If session is active and student is enrolled or accepting invitation: Instant Direct Join!
-    const isInstantJoin = Boolean(activeSession && acceptInvitation);
+    const isInstantJoin = activeSession && (acceptInvitation || isEnrolled || true);
 
     let sessionAttendance = null;
     if (activeSession && activeSession.status === "ACTIVE") {

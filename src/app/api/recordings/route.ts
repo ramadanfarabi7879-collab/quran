@@ -34,16 +34,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    let user = await getCurrentUser();
+    const user = await getCurrentUser();
     if (!user || user.role === "STUDENT") {
-      const teacherFallback = await prisma.user.findFirst({
-        where: { role: { in: ["TEACHER", "ADMIN"] } },
-      });
-      if (teacherFallback) {
-        user = teacherFallback as any;
-      } else {
-        return NextResponse.json({ error: "غير مصرح، خاص بالمعلم فقط" }, { status: 403 });
-      }
+      return NextResponse.json({ error: "غير مصرح، خاص بالمعلم فقط" }, { status: 403 });
     }
 
     const contentType = req.headers.get("content-type") || "";

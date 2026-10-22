@@ -1278,11 +1278,11 @@ export function InteractiveMushaf({
         <div
           ref={mushafScrollRef}
           style={{ overflowAnchor: "none" }}
-          className="flex-1 min-h-0 overflow-y-auto p-1 sm:p-4 md:p-6 bg-[#fbf8f1] dark:bg-slate-950 flex flex-col items-center select-none"
+          className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-6 bg-[#fbf8f1] dark:bg-slate-950 flex flex-col items-center select-none"
         >
           {/* Authentic Mushaf Book Display Frame */}
           <div
-            className={`relative w-full max-w-4xl bg-[#fffdf9] dark:bg-slate-900 rounded-2xl border-4 border-[#c2a661]/40 dark:border-[#c2a661]/20 p-1.5 sm:p-4 transition-all duration-300 ${
+            className={`relative w-full max-w-2xl bg-[#fffdf9] dark:bg-slate-900 rounded-2xl border-4 border-[#c2a661]/40 dark:border-[#c2a661]/20 p-2 sm:p-4 transition-all duration-300 ${
               isRightPage
                 ? "border-l-[6px] border-l-[#a68641] shadow-[-10px_0_25px_-5px_rgba(0,0,0,0.15)]"
                 : "border-r-[6px] border-r-[#a68641] shadow-[10px_0_25px_-5px_rgba(0,0,0,0.15)]"

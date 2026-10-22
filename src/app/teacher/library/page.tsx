@@ -17,8 +17,6 @@ import {
   X,
   FileCheck,
   ImageIcon,
-  Trash2,
-  Pencil,
 } from "lucide-react";
 
 export default function TeacherLibraryPage() {
@@ -29,13 +27,6 @@ export default function TeacherLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [readingBook, setReadingBook] = useState<any | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingBook, setEditingBook] = useState<any | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editAuthor, setEditAuthor] = useState("");
-  const [editCategory, setEditCategory] = useState("أحكام التجويد");
-  const [editDescription, setEditDescription] = useState("");
-  const [editPagesCount, setEditPagesCount] = useState<number>(1);
-  const [editSubmitting, setEditSubmitting] = useState(false);
 
   // Form State
   const [title, setTitle] = useState("");
@@ -133,52 +124,6 @@ export default function TeacherLibraryPage() {
     setUploadSuccess(null);
     if (pdfInputRef.current) pdfInputRef.current.value = "";
     if (coverInputRef.current) coverInputRef.current.value = "";
-  };
-
-  const handleDeleteBook = async (bookId: string) => {
-    if (!window.confirm("هل أنت متأكد من حذف هذا الكتاب نهائياً من المكتبة؟")) return;
-    try {
-      const res = await fetch(`/api/library?id=${encodeURIComponent(bookId)}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setBooks((prev) => prev.filter((b) => b.id !== bookId));
-      } else {
-        const d = await res.json().catch(() => ({}));
-        alert(d.error || "فشل حذف الكتاب");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("حدث خطأ أثناء حذف الكتاب");
-    }
-  };
-
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingBook || !editTitle.trim()) return;
-    setEditSubmitting(true);
-    try {
-      const res = await fetch("/api/library", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editingBook.id,
-          title: editTitle.trim(),
-          author: editAuthor.trim() || "غير محدد",
-          category: editCategory,
-          description: editDescription.trim(),
-          pagesCount: editPagesCount,
-        }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || "فشل تعديل بيانات الكتاب");
-      setBooks((prev) => prev.map((b) => (b.id === editingBook.id ? { ...b, ...d.book } : b)));
-      setEditingBook(null);
-    } catch (err: any) {
-      alert(err.message || "حدث خطأ أثناء تعديل الكتاب");
-    } finally {
-      setEditSubmitting(false);
-    }
   };
 
   const handleAddBook = async (e: React.FormEvent) => {
@@ -404,29 +349,6 @@ export default function TeacherLibraryPage() {
                     >
                       <Download className="w-4 h-4" />
                     </a>
-
-                    <button
-                      onClick={() => {
-                        setEditingBook(book);
-                        setEditTitle(book.title);
-                        setEditAuthor(book.author || "");
-                        setEditCategory(book.category || "أحكام التجويد");
-                        setEditDescription(book.description || "");
-                        setEditPagesCount(book.pagesCount || 1);
-                      }}
-                      className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-amber-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                      title="تعديل بيانات الكتاب"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={() => handleDeleteBook(book.id)}
-                      className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-red-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                      title="حذف الكتاب"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
               );
@@ -667,120 +589,6 @@ export default function TeacherLibraryPage() {
                         <span>حفظ ورفع الكتاب</span>
                       </>
                     )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-        {/* Modal: Edit Book Details */}
-        {editingBook && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 my-8">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
-                    <Pencil className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                      تعديل بيانات الكتاب
-                    </h3>
-                    <p className="text-[11px] text-slate-400">تحديث عنوان وتصنيف ومعلومات الكتاب</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setEditingBook(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    عنوان الكتاب *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      اسم المؤلف / المحقق
-                    </label>
-                    <input
-                      type="text"
-                      value={editAuthor}
-                      onChange={(e) => setEditAuthor(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      التصنيف *
-                    </label>
-                    <select
-                      value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    >
-                      {categories.filter((c) => c !== "ALL").map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    عدد الصفحات
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={editPagesCount}
-                    onChange={(e) => setEditPagesCount(parseInt(e.target.value, 10) || 1)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    نبذة عن الكتاب
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setEditingBook(null)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold transition"
-                  >
-                    إلغاء
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={editSubmitting}
-                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition disabled:opacity-50"
-                  >
-                    {editSubmitting ? "جارٍ الحفظ..." : "حفظ التعديلات"}
                   </button>
                 </div>
               </form>
