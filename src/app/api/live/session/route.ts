@@ -3,6 +3,76 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { realtimeHub } from "@/lib/realtime";
 
+export const dynamic = "force-dynamic";
+
+async function cleanupStaleSessions() {
+  try {
+    const activeSessions = await prisma.liveSession.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true, startedAt: true, halaqaId: true },
+    });
+
+    if (activeSessions.length === 0) return;
+
+    const now = Date.now();
+    const staleIds: string[] = [];
+
+    for (const sess of activeSessions) {
+      const startedTime = sess.startedAt ? new Date(sess.startedAt).getTime() : 0;
+      const ageMs = now - startedTime;
+
+      // 1. If session started more than 3 hours ago -> always stale
+      if (ageMs > 3 * 60 * 60 * 1000) {
+        staleIds.push(sess.id);
+        continue;
+      }
+
+      // 2. If session is older than 10 minutes, check for recent signal activity
+      if (ageMs > 10 * 60 * 1000) {
+        const lastSignal = await prisma.classroomSignal.findFirst({
+          where: { sessionId: sess.id },
+          orderBy: { id: "desc" },
+          select: { createdAt: true },
+        });
+
+        // If no signal ever, or last signal was > 10 minutes ago, session is abandoned
+        if (!lastSignal || (now - new Date(lastSignal.createdAt).getTime()) > 10 * 60 * 1000) {
+          staleIds.push(sess.id);
+        }
+      }
+    }
+
+    if (staleIds.length > 0) {
+      await prisma.liveSession.updateMany({
+        where: { id: { in: staleIds } },
+        data: { status: "ENDED", endedAt: new Date() },
+      });
+
+      await prisma.halaqa.updateMany({
+        where: { currentLiveSessionId: { in: staleIds } },
+        data: { isLiveNow: false, currentLiveSessionId: null },
+      });
+
+      for (const sid of staleIds) {
+        await prisma.notification.updateMany({
+          where: {
+            type: "HALAQA_STARTING",
+            link: { contains: sid },
+          },
+          data: { isRead: true },
+        });
+      }
+
+      realtimeHub.broadcast("global", {
+        type: "HALAQA_LIVE_ENDED",
+        payload: { sessionId: staleIds[0] },
+      });
+    }
+  } catch (err) {
+    console.warn("Stale session cleanup error:", err);
+  }
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -16,12 +86,19 @@ export async function GET(req: Request) {
       await prisma.halaqa.updateMany({
         data: { isLiveNow: false, currentLiveSessionId: null },
       });
+      await prisma.notification.updateMany({
+        where: { type: "HALAQA_STARTING", isRead: false },
+        data: { isRead: true },
+      });
       realtimeHub.broadcast("global", {
         type: "HALAQA_LIVE_ENDED",
         payload: { sessionId: "all" },
       });
       return NextResponse.json({ success: true, message: "تم إنهاء كافة الجلسات النشطة بنجاح" });
     }
+
+    // Auto cleanup stale/abandoned sessions before resolving current state
+    await cleanupStaleSessions();
 
     const sessionId = searchParams.get("sessionId");
     const halaqaId = searchParams.get("halaqaId");
@@ -327,6 +404,14 @@ export async function POST(req: Request) {
         currentLiveSessionId: null,
       },
     });
+    // Mark any previous unread HALAQA_STARTING notifications as read to avoid stale invitations
+    await prisma.notification.updateMany({
+      where: {
+        type: "HALAQA_STARTING",
+        isRead: false,
+      },
+      data: { isRead: true },
+    });
 
     // Create session
     const halaqaId = halaqa.id;
@@ -463,10 +548,24 @@ export async function DELETE(req: Request) {
         where: { id: sessionId },
         data: { status: "ENDED", endedAt: new Date() },
       });
+      await prisma.notification.updateMany({
+        where: {
+          type: "HALAQA_STARTING",
+          link: { contains: sessionId },
+        },
+        data: { isRead: true },
+      });
     } else {
       await prisma.liveSession.updateMany({
         where: { status: "ACTIVE" },
         data: { status: "ENDED", endedAt: new Date() },
+      });
+      await prisma.notification.updateMany({
+        where: {
+          type: "HALAQA_STARTING",
+          isRead: false,
+        },
+        data: { isRead: true },
       });
     }
 

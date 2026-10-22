@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useAuth } from "@/components/providers/AppProviders";
+import { useAuth, useRealtime } from "@/components/providers/AppProviders";
 import { playStudentApprovedSound, playScheduleAlertSound, playHalaqaStartSound } from "@/lib/sound";
 import {
   Bell,
@@ -22,6 +22,8 @@ interface StudentNotification {
   type: string;
   link?: string | null;
   createdAt: string;
+  isSessionActive?: boolean;
+  sessionData?: any;
 }
 
 const DECISION_TYPES = new Set([
@@ -38,12 +40,27 @@ const DECISION_TYPES = new Set([
 
 export function StudentDecisionOverlay() {
   const { user } = useAuth();
-  const isTeacherPath = typeof window !== "undefined" && (window.location.pathname.startsWith("/teacher") || window.location.search.includes("role=teacher"));
-  const isStudent = (user?.role !== "TEACHER" && user?.role !== "ADMIN" && !isTeacherPath);
+  const { lastEvent } = useRealtime();
+
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+  const isTeacherPath = typeof window !== "undefined" && (pathname.startsWith("/teacher") || window.location.search.includes("role=teacher"));
+  const isPublicGateway = pathname === "/" || pathname === "/login" || pathname === "/register";
+
+  // Prevent overlay on public landing gateways unless user is authenticated as STUDENT
+  const isStudent = (user?.role === "STUDENT" || (!user && !isPublicGateway && pathname.startsWith("/student"))) && !isTeacherPath;
 
   const [activeNotification, setActiveNotification] = useState<StudentNotification | null>(null);
   const [joining, setJoining] = useState(false);
   const seenIdsRef = React.useRef<Set<string>>(new Set());
+
+  // Listen to instant real-time events to immediately dismiss live session invitations when session ends
+  useEffect(() => {
+    if (lastEvent?.type === "HALAQA_LIVE_ENDED") {
+      if (activeNotification?.type === "HALAQA_STARTING" || activeNotification?.type === "SESSION_STARTED") {
+        setActiveNotification(null);
+      }
+    }
+  }, [lastEvent, activeNotification]);
 
   // PeerJS Direct Instant Listener for Real-Time Sheikh Decisions (<50ms)
   useEffect(() => {
@@ -153,8 +170,25 @@ export function StudentDecisionOverlay() {
           if (n.isRead) return false;
           if (seenIdsRef.current.has(n.id)) return false;
           if (typeof window !== "undefined" && localStorage.getItem(`dismissed_notif_${n.id}`)) return false;
-          return DECISION_TYPES.has(n.type);
+          if (!DECISION_TYPES.has(n.type)) return false;
+
+          // CRITICAL: Live session invitations MUST have an active live session!
+          if (n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") {
+            if (!n.isSessionActive || !data.activeLiveSession) {
+              seenIdsRef.current.add(n.id);
+              return false;
+            }
+          }
+          return true;
         });
+
+        // If currently showing a live session notification, but the session is no longer active, dismiss immediately
+        if (activeNotification && (activeNotification.type === "HALAQA_STARTING" || activeNotification.type === "SESSION_STARTED")) {
+          const matching = (data.notifications || []).find((n: any) => n.id === activeNotification.id);
+          if (!matching?.isSessionActive || !data.activeLiveSession) {
+            setActiveNotification(null);
+          }
+        }
 
         if (unread.length > 0 && !activeNotification) {
           const latest = unread[0];

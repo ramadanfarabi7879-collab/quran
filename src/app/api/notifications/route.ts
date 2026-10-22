@@ -33,7 +33,8 @@ export async function GET(req: Request) {
     });
 
     // 2. Query active live sessions in a single optimized query
-    const activeSessions = await prisma.liveSession.findMany({
+    const now = Date.now();
+    const rawActiveSessions = await prisma.liveSession.findMany({
       where: { status: "ACTIVE" },
       include: {
         halaqa: {
@@ -43,14 +44,39 @@ export async function GET(req: Request) {
         },
       },
     });
+
+    // Filter out any stale sessions (>3 hours old)
+    const activeSessions = rawActiveSessions.filter((s) => {
+      const ageMs = now - (s.startedAt ? new Date(s.startedAt).getTime() : 0);
+      return ageMs <= 3 * 60 * 60 * 1000;
+    });
     const activeSessionMap = new Map(activeSessions.map((s) => [s.id, s]));
+
+    // Auto-mark any stale live session notifications whose sessions already ended as read
+    const staleNotifIds = new Set<string>();
+    notifications.forEach((n) => {
+      if ((n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") && !n.isRead) {
+        const targetSessionId = n.link ? n.link.split("/classroom/")[1]?.split("?")[0] : null;
+        if (!targetSessionId || !activeSessionMap.has(targetSessionId)) {
+          staleNotifIds.add(n.id);
+        }
+      }
+    });
+
+    if (staleNotifIds.size > 0) {
+      await prisma.notification.updateMany({
+        where: { id: { in: Array.from(staleNotifIds) } },
+        data: { isRead: true },
+      }).catch(() => {});
+    }
 
     // 3. Enrich notifications with live status without discarding historical records
     const enrichedNotifications = notifications.map((n) => {
       let isSessionActive = false;
       let sessionData = null;
+      const isStale = staleNotifIds.has(n.id);
 
-      if (n.type === "HALAQA_STARTING") {
+      if (n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") {
         const targetSessionId = n.link ? n.link.split("/classroom/")[1]?.split("?")[0] : null;
         if (targetSessionId && activeSessionMap.has(targetSessionId)) {
           isSessionActive = true;
@@ -66,6 +92,7 @@ export async function GET(req: Request) {
 
       return {
         ...n,
+        isRead: isStale ? true : n.isRead,
         isSessionActive,
         sessionData,
       };
