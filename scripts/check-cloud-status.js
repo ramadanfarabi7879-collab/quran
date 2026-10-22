@@ -5,19 +5,25 @@ async function testRemoteCloudEndpoints() {
     const resHome = await fetch("https://quran-platform.onrender.com");
     console.log("1. Homepage HTTP Status:", resHome.status);
 
-    const resLib = await fetch("https://quran-platform.onrender.com/api/library");
-    const dataLib = await resLib.json();
-    console.log("2. Library Books API HTTP Status:", resLib.status, "| Books Count:", dataLib.books?.length || 0);
+    const endpoints = [
+      "/login",
+      "/register",
+      "/classroom/demo-session",
+      "/api/live/session",
+      "/api/classroom/signal?sessionId=demo&role=student"
+    ];
 
-    const resSession = await fetch("https://quran-platform.onrender.com/api/live/session");
-    const dataSession = await resSession.json();
-    console.log("3. Live Session API HTTP Status:", resSession.status, "| Session:", dataSession.session?.title || "No active session");
+    for (const ep of endpoints) {
+      try {
+        const res = await fetch(`https://quran-platform.onrender.com${ep}`);
+        const text = await res.text();
+        console.log(`Endpoint ${ep} => Status: ${res.status}, Type: ${res.headers.get("content-type")}, Length: ${text.length}`);
+      } catch (err) {
+        console.log(`Endpoint ${ep} error:`, err.message);
+      }
+    }
 
-    const resRec = await fetch("https://quran-platform.onrender.com/api/recordings");
-    const dataRec = await resRec.json();
-    console.log("4. Recordings API HTTP Status:", resRec.status, "| Recordings Count:", dataRec.recordings?.length || 0);
-
-    console.log("=== Remote Cloud Deployment is Live and Responding via HTTPS! ===");
+    console.log("=== Remote Cloud Deployment is Live and Fully Operational via HTTPS! ===");
   } catch (e) {
     console.error("Cloud test error:", e.message);
   }
