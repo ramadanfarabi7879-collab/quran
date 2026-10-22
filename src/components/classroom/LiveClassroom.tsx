@@ -205,6 +205,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   const recordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const recordingAnimRef = useRef<number | null>(null);
   const recordingAudioCtxRef = useRef<AudioContext | null>(null);
+  const recordingAudioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
 
   // Hardware status
   const [hasRealMic, setHasRealMic] = useState(false);
@@ -666,21 +667,32 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
       // Bind to media elements
       if (event.track.kind === "audio") {
+        const audioStream = new MediaStream([event.track]);
         if (remoteAudioRef.current) {
-          if (remoteAudioRef.current.srcObject !== stream) {
-            remoteAudioRef.current.srcObject = stream;
-          }
+          remoteAudioRef.current.srcObject = audioStream;
+          remoteAudioRef.current.volume = 1.0;
+          remoteAudioRef.current.muted = false;
           remoteAudioRef.current.play().catch(() => {
             setNeedsAudioUnlock(true);
           });
         }
 
-        // Attach audio analyser
+        // Attach audio analyser directly to the incoming audio track
         if (remoteAudioAnalyserCleanupRef.current) {
           remoteAudioAnalyserCleanupRef.current();
           remoteAudioAnalyserCleanupRef.current = null;
         }
-        remoteAudioAnalyserCleanupRef.current = setupAudioAnalyser(stream, setRemoteIsSpeaking);
+        remoteAudioAnalyserCleanupRef.current = setupAudioAnalyser(audioStream, setRemoteIsSpeaking);
+
+        // Dynamically connect remote audio to active recording mixer if recording is active
+        if (recordingAudioDestRef.current && recordingAudioCtxRef.current) {
+          try {
+            const remoteSrc = recordingAudioCtxRef.current.createMediaStreamSource(audioStream);
+            remoteSrc.connect(recordingAudioDestRef.current);
+          } catch (recErr) {
+            console.warn("Could not attach remote audio to recording mixer:", recErr);
+          }
+        }
       }
 
       if (event.track.kind === "video") {
@@ -852,9 +864,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     syncLocalTracks(pc);
 
     return newStream;
-  }, [isMicOn, isVideoOn, getOrCreatePeerConnection, syncLocalTracks]);
+  }, [isTeacher, canSpeak, isMicOn, isVideoOn, getOrCreatePeerConnection, syncLocalTracks]);
 
-  // Initial media hardware initialization
+  // Initial media hardware initialization (runs once per session lifecycle)
   useEffect(() => {
     let isCancelled = false;
 
@@ -886,7 +898,18 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         peerConnectionRef.current = null;
       }
     };
-  }, [sessionId, myRole, isTeacher]);
+  }, [sessionId]);
+
+  // Continuously synchronize local audio track with state and permissions with zero stream teardown
+  useEffect(() => {
+    if (!localStreamRef.current) return;
+    const shouldBeEnabled = isTeacher ? isMicOn : (canSpeak && isMicOn);
+    localStreamRef.current.getAudioTracks().forEach((track) => {
+      if (track.enabled !== shouldBeEnabled) {
+        track.enabled = shouldBeEnabled;
+      }
+    });
+  }, [isTeacher, canSpeak, isMicOn]);
 
   // Signaling message handler
   const handleSignalMessage = useCallback(
@@ -1142,9 +1165,17 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       }
     }
     if (remoteAudioRef.current && remoteStreamRef.current) {
-      if (remoteAudioRef.current.srcObject !== remoteStreamRef.current) {
-        remoteAudioRef.current.srcObject = remoteStreamRef.current;
-        remoteAudioRef.current.play().catch(() => setNeedsAudioUnlock(true));
+      const audioTracks = remoteStreamRef.current.getAudioTracks();
+      if (audioTracks.length > 0) {
+        const curSrc = remoteAudioRef.current.srcObject as MediaStream | null;
+        const curTrackId = curSrc?.getAudioTracks()?.[0]?.id;
+        if (curTrackId !== audioTracks[0].id) {
+          const audioStream = new MediaStream([audioTracks[0]]);
+          remoteAudioRef.current.srcObject = audioStream;
+          remoteAudioRef.current.volume = 1.0;
+          remoteAudioRef.current.muted = false;
+          remoteAudioRef.current.play().catch(() => setNeedsAudioUnlock(true));
+        }
       }
     }
   }, [hasRemoteStream, isTeacher, isVideoOn, authStatus]);
@@ -1209,25 +1240,37 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
 
   const handleTeacherGrantSpeak = async (studentClientId: string) => {
     setPendingSpeakRequests((prev) => prev.filter((r) => r.studentId !== studentClientId));
-    await sendSignalingMessage("SPEAK_DECISION", {
-      targetClientId: studentClientId,
-      granted: true,
-    });
+    await sendSignalingMessage(
+      "SPEAK_DECISION",
+      {
+        targetClientId: studentClientId,
+        granted: true,
+      },
+      studentClientId
+    );
   };
 
   const handleTeacherRejectSpeak = async (studentClientId: string) => {
     setPendingSpeakRequests((prev) => prev.filter((r) => r.studentId !== studentClientId));
-    await sendSignalingMessage("SPEAK_DECISION", {
-      targetClientId: studentClientId,
-      granted: false,
-    });
+    await sendSignalingMessage(
+      "SPEAK_DECISION",
+      {
+        targetClientId: studentClientId,
+        granted: false,
+      },
+      studentClientId
+    );
   };
 
   const handleTeacherRevokeSpeak = async (targetId?: string) => {
     const target = targetId || remoteClientIdRef.current;
-    await sendSignalingMessage("SPEAK_REVOKED", {
-      targetClientId: target,
-    });
+    await sendSignalingMessage(
+      "SPEAK_REVOKED",
+      {
+        targetClientId: target,
+      },
+      target
+    );
     alert("تم سحب إذن التحدث وكتم صوت الطالب بنجاح.");
   };
 
@@ -1245,6 +1288,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         await audioCtx.resume();
       }
       const audioDest = audioCtx.createMediaStreamDestination();
+      recordingAudioDestRef.current = audioDest;
 
       if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
         try {
@@ -1453,7 +1497,9 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     }
     if (recordingAudioCtxRef.current) {
       recordingAudioCtxRef.current.close().catch(() => {});
+      recordingAudioCtxRef.current = null;
     }
+    recordingAudioDestRef.current = null;
     sendSignalingMessage("RECORDING_STATE", { isRecording: false });
   };
 

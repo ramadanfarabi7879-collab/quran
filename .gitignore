@@ -17,3 +17,4 @@ cloudflared.exe
 node.exe
 
 scratch/
+public/recordings/*.webm
