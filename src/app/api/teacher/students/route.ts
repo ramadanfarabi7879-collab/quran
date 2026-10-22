@@ -133,6 +133,41 @@ export async function GET(req: Request) {
       orderBy: { checkInTime: "desc" },
     });
 
+    // 7. Pending Follow-Up / Observation Requests for Active Sessions
+    try {
+      const pendingFollowUps = await prisma.sessionFollowUpRequest.findMany({
+        where: {
+          status: "PENDING",
+          session: { status: "ACTIVE" },
+        },
+        include: {
+          student: { include: { user: true } },
+          session: { include: { halaqa: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      for (const fur of pendingFollowUps) {
+        const exists = activeSessionPendingAttendances.some(
+          (a) => a.sessionId === fur.sessionId && a.studentId === fur.studentId
+        );
+        if (!exists) {
+          activeSessionPendingAttendances.push({
+            id: `att-${fur.sessionId}-${fur.studentId}`,
+            sessionId: fur.sessionId,
+            studentId: fur.studentId,
+            status: "ABSENT",
+            isVerifiedByTeacher: false,
+            requestedCheckIn: true,
+            checkInTime: fur.createdAt,
+            notes: fur.decisionNotes || "طلب متابعة الجلسة",
+            student: fur.student,
+            session: fur.session,
+          } as any);
+        }
+      }
+    } catch {}
+
     return NextResponse.json({
       students: enrollments,
       deletedStudents,

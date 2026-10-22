@@ -241,11 +241,11 @@ export async function GET(req: Request) {
         } else if (followUpReq?.status === "REJECTED") {
           isAuthorized = false;
           authorizationStatus = "REJECTED";
-        } else if (followUpReq?.status === "PENDING" || sessionAtt?.requestedCheckIn) {
+        } else if (followUpReq?.status === "PENDING" || (sessionAtt?.requestedCheckIn && !sessionAtt?.isVerifiedByTeacher)) {
           isAuthorized = false;
           authorizationStatus = "PENDING_APPROVAL";
         } else {
-          // If session is active with existing participants and student hasn't been approved yet:
+          // If session is active, check if there is an explicit pending request
           const hasPendingHalaqa = session.halaqa.joinRequests?.some(
             (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "PENDING"
           );
@@ -253,8 +253,9 @@ export async function GET(req: Request) {
             isAuthorized = false;
             authorizationStatus = "PENDING_APPROVAL";
           } else {
-            isAuthorized = false;
-            authorizationStatus = "NEEDS_REQUEST";
+            // Teacher is holding an open live session; active registered students are welcome to attend!
+            isAuthorized = true;
+            authorizationStatus = "AUTHORIZED";
           }
         }
       }
@@ -435,9 +436,21 @@ export async function POST(req: Request) {
     // Since Teacher initiates the session, students are pre-verified to join without needing second approval!
     const studentUserIdsToNotify = new Set<string>();
     for (const enrollment of halaqa.enrollments) {
-      studentUserIdsToNotify.add(enrollment.student.user.id);
-      await prisma.sessionAttendance.create({
-        data: {
+      if (enrollment.student?.user?.id) {
+        studentUserIdsToNotify.add(enrollment.student.user.id);
+      }
+      await prisma.sessionAttendance.upsert({
+        where: {
+          sessionId_studentId: {
+            sessionId: liveSession.id,
+            studentId: enrollment.studentId,
+          },
+        },
+        update: {
+          status: "ABSENT",
+          isVerifiedByTeacher: true,
+        },
+        create: {
           sessionId: liveSession.id,
           studentId: enrollment.studentId,
           status: "ABSENT",
@@ -446,22 +459,32 @@ export async function POST(req: Request) {
       }).catch(() => {});
     }
 
-    // If no enrollments found for this halaqa, find all active students in the platform
-    if (studentUserIdsToNotify.size === 0) {
-      const allStudents = await prisma.studentProfile.findMany({
-        include: { user: true },
-      });
-      for (const st of allStudents) {
+    // Also notify and authorize all active students across the platform
+    const allActiveStudents = await prisma.studentProfile.findMany({
+      where: { user: { isActive: true } },
+      include: { user: true },
+    });
+    for (const st of allActiveStudents) {
+      if (st.user?.id) {
         studentUserIdsToNotify.add(st.user.id);
-        await prisma.sessionAttendance.create({
-          data: {
+      }
+      await prisma.sessionAttendance.upsert({
+        where: {
+          sessionId_studentId: {
             sessionId: liveSession.id,
             studentId: st.id,
-            status: "ABSENT",
-            isVerifiedByTeacher: true, // Sheikh invited them; 1-click direct join!
           },
-        }).catch(() => {});
-      }
+        },
+        update: {
+          isVerifiedByTeacher: true,
+        },
+        create: {
+          sessionId: liveSession.id,
+          studentId: st.id,
+          status: "ABSENT",
+          isVerifiedByTeacher: true, // Sheikh invited them; 1-click direct join!
+        },
+      }).catch(() => {});
     }
 
     // Send database notifications to each student without duplicate spam
@@ -483,6 +506,11 @@ export async function POST(req: Request) {
             type: "HALAQA_STARTING",
             link: `/classroom/${liveSession.id}?role=student`,
           },
+        });
+      } else if (existing.isRead) {
+        await prisma.notification.update({
+          where: { id: existing.id },
+          data: { isRead: false },
         });
       }
     }

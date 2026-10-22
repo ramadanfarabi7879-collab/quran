@@ -34,6 +34,7 @@ const DECISION_TYPES = new Set([
   "REGISTRATION_REJECTED",
   "JOIN_REQUEST_DECIDED",
   "SESSION_REJECTED",
+  "JOIN_REQUEST_REJECTED",
   "HALAQA_STARTING",
   "SESSION_STARTED",
 ]);
@@ -279,9 +280,9 @@ export function StudentDecisionOverlay() {
   if (!isStudent || !activeNotification) return null;
 
   const isLiveStarting = activeNotification.type === "HALAQA_STARTING" || activeNotification.type === "SESSION_STARTED";
-  const isApproved = activeNotification.type === "ACCOUNT_APPROVED" || activeNotification.type === "SESSION_APPROVED";
+  const isApproved = activeNotification.type === "ACCOUNT_APPROVED" || activeNotification.type === "SESSION_APPROVED" || activeNotification.type === "JOIN_REQUEST_APPROVED";
   const isRescheduled = activeNotification.type === "SCHEDULE_UPDATED";
-  const isRejected = activeNotification.type === "REGISTRATION_REJECTED" || activeNotification.type === "SESSION_REJECTED";
+  const isRejected = activeNotification.type === "REGISTRATION_REJECTED" || activeNotification.type === "SESSION_REJECTED" || activeNotification.type === "JOIN_REQUEST_DECIDED" || activeNotification.type === "JOIN_REQUEST_REJECTED";
 
   return (
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] w-[95%] max-w-md animate-in slide-in-from-top-6 duration-300 drop-shadow-2xl">
@@ -375,6 +376,15 @@ export function StudentDecisionOverlay() {
                 <Video className="w-4 h-4" />
                 <span>{joining ? "جارٍ الدخول..." : "قبول ودخول الجلسة 🎥"}</span>
               </button>
+            ) : activeNotification.link?.includes("/classroom/") ? (
+              <Link
+                href={activeNotification.link}
+                onClick={handleDismiss}
+                className="px-5 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 transition flex items-center gap-1.5 shadow-lg active:scale-95"
+              >
+                <Video className="w-4 h-4" />
+                <span>دخول الحلقة الآن 🎥</span>
+              </Link>
             ) : activeNotification.link ? (
               <Link
                 href={activeNotification.link}
