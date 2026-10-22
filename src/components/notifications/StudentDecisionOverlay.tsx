@@ -186,6 +186,7 @@ export function StudentDecisionOverlay() {
           if (n.isRead) return false;
           if (seenIdsRef.current.has(n.id)) return false;
           if (typeof window !== "undefined" && localStorage.getItem(`dismissed_notif_${n.id}`)) return false;
+          if ((n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") && !n.isSessionActive) return false;
           return DECISION_TYPES.has(n.type);
         });
 

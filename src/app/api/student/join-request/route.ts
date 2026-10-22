@@ -200,6 +200,7 @@ export async function POST(req: Request) {
       halaqaId: resolvedHalaqaId,
       halaqaName: halaqa.name,
       studentId: studentProfileId,
+      studentUserId: user.id,
       studentName: user.name || "طالب العلم",
       studentAvatar: user.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150",
       teacherUserId,

@@ -287,10 +287,6 @@ export function SheikhDecisionOverlay() {
     setQueue((prev) => (prev.length > 0 ? prev.slice(1) : []));
   };
 
-  if (!isTeacherOrAdmin || !activeItem) {
-    return null;
-  }
-
   // Pre-compiled list of suggested times from actual halaqat or presets
   const suggestedTimes = [
     ...(availableHalaqat.map((h: any) => `${h.name} (${h.startTime || "16:00"})`)),
@@ -565,6 +561,10 @@ export function SheikhDecisionOverlay() {
       console.error("Reject error:", err);
     }
   };
+
+  if (!isTeacherOrAdmin || !activeItem) {
+    return null;
+  }
 
   const isRegistration = activeItem.type === "REGISTRATION";
 
