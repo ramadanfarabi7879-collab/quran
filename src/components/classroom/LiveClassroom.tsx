@@ -186,25 +186,38 @@ function RemotePeerAudio({
   onUnlockNeeded?: () => void;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioTrack = peer.stream?.getAudioTracks()?.[0];
+  const trackId = audioTrack?.id;
 
+  // Attach track ONLY when the underlying audio track changes, avoiding playback resets
   useEffect(() => {
     const audioEl = audioRef.current;
-    if (!audioEl || !peer.stream) return;
-
-    const audioTracks = peer.stream.getAudioTracks();
-    if (audioTracks.length === 0) return;
+    if (!audioEl || !audioTrack) return;
 
     const currentStream = audioEl.srcObject as MediaStream | null;
     const currentTrackId = currentStream?.getAudioTracks()?.[0]?.id;
-    if (currentTrackId !== audioTracks[0].id) {
-      audioEl.srcObject = new MediaStream([audioTracks[0]]);
+    if (currentTrackId !== trackId) {
+      audioEl.srcObject = new MediaStream([audioTrack]);
       audioEl.volume = 1.0;
       audioEl.muted = false;
       audioEl.play().catch(() => {
         if (onUnlockNeeded) onUnlockNeeded();
       });
     }
-  }, [peer.stream, peer.hasAudio, onUnlockNeeded]);
+  }, [trackId, audioTrack, onUnlockNeeded]);
+
+  // Clean unmount ONLY when participant leaves
+  useEffect(() => {
+    return () => {
+      const audioEl = audioRef.current;
+      if (audioEl) {
+        try {
+          audioEl.pause();
+          audioEl.srcObject = null;
+        } catch {}
+      }
+    };
+  }, []);
 
   return <audio ref={audioRef} autoPlay playsInline />;
 }
@@ -236,8 +249,16 @@ function RemotePeerVideo({
   useEffect(() => {
     const vidEl = vidRef.current;
     if (!vidEl || !stream) return;
-    if (vidEl.srcObject !== stream) {
-      vidEl.srcObject = stream;
+    const videoTracks = stream.getVideoTracks();
+    if (videoTracks.length === 0) return;
+
+    const currentStream = vidEl.srcObject as MediaStream | null;
+    const currentTrackId = currentStream?.getVideoTracks()?.[0]?.id;
+    if (currentTrackId !== videoTracks[0].id) {
+      // Pass video-only track to prevent WebRTC lip-sync jitter buffer padding on audio
+      vidEl.srcObject = new MediaStream([videoTracks[0]]);
+      vidEl.muted = true;
+      vidEl.defaultMuted = true;
       vidEl.play().catch(() => {});
     }
   }, [stream, hasVideo, isVideoOn]);
@@ -400,7 +421,6 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
   // Elements and stream refs
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
@@ -931,6 +951,14 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         const p = peersRef.current.get(targetClientId);
         if (!p) return;
 
+        // Cleanly remove any old track of the same kind to prevent track accumulation and stale buffer playout
+        p.stream.getTracks().forEach((existingTrack) => {
+          if (existingTrack.kind === event.track.kind && existingTrack.id !== event.track.id) {
+            p.stream.removeTrack(existingTrack);
+            try { existingTrack.stop(); } catch {}
+          }
+        });
+
         if (!p.stream.getTracks().some((t) => t.id === event.track.id)) {
           p.stream.addTrack(event.track);
         }
@@ -939,6 +967,13 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         p.hasVideo = p.stream.getVideoTracks().length > 0;
 
         if (event.track.kind === "audio") {
+          // Enforce zero jitter buffer delay hint to prevent lag accumulation and repeat speech
+          if (event.receiver && "playoutDelayHint" in event.receiver) {
+            try {
+              (event.receiver as any).playoutDelayHint = 0.0;
+            } catch {}
+          }
+
           if (p.analyserCleanup) {
             p.analyserCleanup();
           }
@@ -1024,6 +1059,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
+          channelCount: 1,
         },
       });
 
@@ -1048,6 +1084,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
+            channelCount: 1,
           },
         });
         if (audioStream.getAudioTracks().length > 0) {
@@ -1210,8 +1247,17 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           updatePeersState();
 
           if (isTeacher) {
-            // Sheikh immediately triggers targeted offer to the joining student
-            setTimeout(() => triggerOfferForPeer(senderClientId, "STUDENT_PRESENCE_JOIN"), 250);
+            // Trigger offer ONLY if connection is not already actively established.
+            // This prevents continuous renegotiation loops every 3s that cause audio buffer bloat and repeating words!
+            const isAlreadyActive =
+              entry.pc.remoteDescription !== null &&
+              (entry.pc.connectionState === "connected" ||
+               entry.pc.iceConnectionState === "connected" ||
+               entry.pc.iceConnectionState === "completed");
+
+            if (!isAlreadyActive && entry.pc.signalingState === "stable") {
+              setTimeout(() => triggerOfferForPeer(senderClientId, "STUDENT_INITIAL_JOIN"), 250);
+            }
           } else {
             // Student responds with PRESENCE_ACK targeted to Sheikh
             sendSignalingMessage(
@@ -1229,7 +1275,15 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           updatePeersState();
 
           if (isTeacher) {
-            setTimeout(() => triggerOfferForPeer(senderClientId, "PRESENCE_ACK_RECEIVED"), 200);
+            const isAlreadyActive =
+              entry.pc.remoteDescription !== null &&
+              (entry.pc.connectionState === "connected" ||
+               entry.pc.iceConnectionState === "connected" ||
+               entry.pc.iceConnectionState === "completed");
+
+            if (!isAlreadyActive && entry.pc.signalingState === "stable") {
+              setTimeout(() => triggerOfferForPeer(senderClientId, "PRESENCE_ACK_INITIAL"), 200);
+            }
           }
         } else if (signalType === "OFFER") {
           const peerRole = (senderRole as "teacher" | "student") || "teacher";
@@ -1451,7 +1505,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     // Poll every 800ms
     const interval = setInterval(pollSignals, 800);
 
-    // Heartbeat presence: ping presence periodically
+    // Heartbeat presence & real-time low-latency audio health check
     const heartbeat = setInterval(() => {
       sendSignalingMessage("PRESENCE", { role: myRole, name: myName, video: isVideoOn, mic: isMicOn });
       if (isTeacher) {
@@ -1461,6 +1515,19 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           }
         });
       }
+
+      // Enforce zero jitter buffer delay hint across all audio receivers to eliminate audio latency buildup
+      peersRef.current.forEach((peer) => {
+        if (peer.pc && (peer.pc.connectionState === "connected" || peer.pc.iceConnectionState === "connected")) {
+          peer.pc.getReceivers().forEach((receiver) => {
+            if (receiver.track && receiver.track.kind === "audio" && "playoutDelayHint" in receiver) {
+              try {
+                (receiver as any).playoutDelayHint = 0.0;
+              } catch {}
+            }
+          });
+        }
+      });
     }, 3000);
 
     return () => {
@@ -1484,30 +1551,16 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         remoteVideoRef.current.play().catch(() => {});
       }
     }
-    if (remoteAudioRef.current && remoteStreamRef.current) {
-      const audioTracks = remoteStreamRef.current.getAudioTracks();
-      if (audioTracks.length > 0) {
-        const curSrc = remoteAudioRef.current.srcObject as MediaStream | null;
-        const curTrackId = curSrc?.getAudioTracks()?.[0]?.id;
-        if (curTrackId !== audioTracks[0].id) {
-          const audioStream = new MediaStream([audioTracks[0]]);
-          remoteAudioRef.current.srcObject = audioStream;
-          remoteAudioRef.current.volume = 1.0;
-          remoteAudioRef.current.muted = false;
-          remoteAudioRef.current.play().catch(() => setNeedsAudioUnlock(true));
-        }
-      }
-    }
   }, [hasRemoteStream, isTeacher, isVideoOn, authStatus]);
 
   // Ambient user interaction audio unlocker for mobile browsers
   useEffect(() => {
     const handleUnlockAudio = () => {
-      if (remoteAudioRef.current && remoteAudioRef.current.paused) {
-        remoteAudioRef.current.play().then(() => {
-          setNeedsAudioUnlock(false);
-        }).catch(() => {});
-      }
+      document.querySelectorAll("audio").forEach((a) => {
+        if (a.paused) {
+          a.play().then(() => setNeedsAudioUnlock(false)).catch(() => {});
+        }
+      });
       if (remoteVideoRef.current && remoteVideoRef.current.paused) {
         remoteVideoRef.current.play().catch(() => {});
       }
@@ -2268,18 +2321,14 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           onUnlockNeeded={() => setNeedsAudioUnlock(true)}
         />
       ))}
-      <audio ref={remoteAudioRef} autoPlay playsInline />
 
       {/* Floating Audio Unlock Button for Mobile browsers when autoplay is restricted */}
       {needsAudioUnlock && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-bounce">
           <button
             onClick={() => {
-              if (remoteAudioRef.current) {
-                remoteAudioRef.current.play().then(() => {
-                  setNeedsAudioUnlock(false);
-                });
-              }
+              document.querySelectorAll("audio").forEach((a) => a.play().catch(() => {}));
+              setNeedsAudioUnlock(false);
             }}
             className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black px-4 py-2.5 rounded-full shadow-2xl text-xs border-2 border-white cursor-pointer active:scale-95 transition"
           >
