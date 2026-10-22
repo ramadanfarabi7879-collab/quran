@@ -1675,16 +1675,18 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         }
       }
 
-      if (remoteStreamRef.current && remoteStreamRef.current.getAudioTracks().length > 0) {
-        try {
-          const remoteSrc = audioCtx.createMediaStreamSource(
-            new MediaStream([remoteStreamRef.current.getAudioTracks()[0]])
-          );
-          remoteSrc.connect(audioDest);
-        } catch (e) {
-          console.warn("Could not attach remote audio to recording mixer:", e);
+      // Attach audio tracks from all connected remote peers to the mixer
+      peersRef.current.forEach((peer) => {
+        const audioTracks = peer.stream.getAudioTracks();
+        if (audioTracks.length > 0) {
+          try {
+            const peerSrc = audioCtx.createMediaStreamSource(new MediaStream([audioTracks[0]]));
+            peerSrc.connect(audioDest);
+          } catch (e) {
+            console.warn("Could not attach peer audio to recording mixer:", e);
+          }
         }
-      }
+      });
 
       let combinedStream: MediaStream;
       let chosenMime = "";
@@ -1702,38 +1704,49 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
           ctx.fillRect(0, 0, 1280, 720);
 
           const localVid = localVideoRef.current;
-          const remoteVid = remoteVideoRef.current;
+          const studentVideos = Array.from(
+            document.querySelectorAll("video[data-role='student-video']")
+          ) as HTMLVideoElement[];
+          const remoteVid =
+            studentVideos.find((v) => v.readyState >= 2 && !v.paused) ||
+            studentVideos[0] ||
+            remoteVideoRef.current;
+
           const hasLocal = localVid && localVid.readyState >= 2 && !localVid.paused;
           const hasRemote = remoteVid && remoteVid.readyState >= 2 && !remoteVid.paused;
+
+          const activeStudentPeer = activeTasmeeStudent || connectedStudents[0] || teacherPeer;
+          const remoteLabel = activeStudentPeer?.name || remotePeerName || (isTeacher ? "طالب العلم" : "معلم الحلقة");
+          const localLabel = myName || (isTeacher ? "معلم الحلقة" : "طالب العلم");
 
           if (hasLocal && hasRemote) {
             ctx.drawImage(localVid, 650, 60, 610, 580);
             ctx.drawImage(remoteVid, 20, 60, 610, 580);
 
-            ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+            ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
             ctx.fillRect(650, 600, 610, 40);
             ctx.fillRect(20, 600, 610, 40);
             ctx.font = "bold 20px Cairo, sans-serif";
             ctx.fillStyle = "#facc15";
             ctx.textAlign = "right";
-            ctx.fillText(myName || "معلم الحلقة", 1240, 628);
-            ctx.fillText(remotePeerName || "طالب العلم", 610, 628);
+            ctx.fillText(localLabel, 1240, 628);
+            ctx.fillText(remoteLabel, 610, 628);
           } else if (hasLocal) {
             ctx.drawImage(localVid, 160, 60, 960, 600);
-            ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+            ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
             ctx.fillRect(160, 620, 960, 40);
             ctx.font = "bold 20px Cairo, sans-serif";
             ctx.fillStyle = "#facc15";
             ctx.textAlign = "right";
-            ctx.fillText(myName || "معلم الحلقة", 1100, 648);
+            ctx.fillText(localLabel, 1100, 648);
           } else if (hasRemote) {
             ctx.drawImage(remoteVid, 160, 60, 960, 600);
-            ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+            ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
             ctx.fillRect(160, 620, 960, 40);
             ctx.font = "bold 20px Cairo, sans-serif";
             ctx.fillStyle = "#facc15";
             ctx.textAlign = "right";
-            ctx.fillText(remotePeerName || "طالب العلم", 1100, 648);
+            ctx.fillText(remoteLabel, 1100, 648);
           } else {
             ctx.fillStyle = "#1e293b";
             ctx.fillRect(100, 80, 1080, 560);
@@ -1877,14 +1890,39 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     sendSignalingMessage("RECORDING_STATE", { isRecording: false });
   };
 
-  const toggleVideo = () => {
+  const toggleVideo = async () => {
     const next = !isVideoOn;
-    setIsVideoOn(next);
-    if (localStreamRef.current) {
+    if (next && (!localStreamRef.current || localStreamRef.current.getVideoTracks().length === 0)) {
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 24 },
+          },
+        });
+        const camTrack = videoStream.getVideoTracks()[0];
+        if (camTrack) {
+          if (!localStreamRef.current) {
+            localStreamRef.current = new MediaStream();
+          }
+          localStreamRef.current.addTrack(camTrack);
+          setHasRealCam(true);
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+            localVideoRef.current.play().catch(() => {});
+          }
+          syncAllPeersTracks();
+        }
+      } catch (err) {
+        console.warn("Could not dynamically start camera track:", err);
+      }
+    } else if (localStreamRef.current) {
       localStreamRef.current.getVideoTracks().forEach((track) => {
         track.enabled = next;
       });
     }
+    setIsVideoOn(next);
     sendSignalingMessage("MEDIA_STATE", { mic: isMicOn, video: next });
   };
 
@@ -1933,8 +1971,8 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
     });
   };
 
-  const handleTeacherMuteStudent = async () => {
-    await sendSignalingMessage("REMOTE_MUTE", { target: "student" });
+  const handleTeacherMuteStudent = async (targetClientId?: string) => {
+    await sendSignalingMessage("REMOTE_MUTE", { targetClientId });
     alert("تم إرسال أمر كتم صوت الطالب بنجاح.");
   };
 
@@ -2477,6 +2515,14 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
               المصحف
             </button>
             <button
+              onClick={() => setActiveTab("PARTICIPANTS")}
+              className={`px-2.5 py-1 rounded-md ${
+                activeTab === "PARTICIPANTS" ? "bg-islamic-700 text-white font-bold" : "text-slate-400"
+              }`}
+            >
+              البث والطلاب
+            </button>
+            <button
               onClick={() => {
                 setActiveTab("CHAT");
                 setUnreadChatCount(0);
@@ -2500,7 +2546,7 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left / Center: Interactive Mushaf */}
         <div
-          className={`flex-1 overflow-y-auto p-2 sm:p-4 bg-slate-900/50 ${
+          className={`flex-1 overflow-y-auto p-1 sm:p-3 bg-slate-900/50 ${
             activeTab === "MUSHAF" ? "block" : "hidden lg:block"
           }`}
         >
@@ -2513,7 +2559,11 @@ export function LiveClassroom({ sessionId }: LiveClassroomProps) {
         </div>
 
         {/* Right Side: Video Streams Grid & Participants & Chat */}
-        <div className="w-full lg:w-96 bg-slate-900 border-t lg:border-t-0 lg:border-r border-slate-800 flex flex-col shrink-0">
+        <div
+          className={`w-full lg:w-96 bg-slate-900 border-t lg:border-t-0 lg:border-r border-slate-800 shrink-0 ${
+            activeTab === "MUSHAF" ? "hidden lg:flex flex-col" : "flex flex-col"
+          }`}
+        >
           {/* Multi-Peer Video Streams Grid & Tasmee' Mode Spotlight */}
           <div className="p-3 bg-slate-950 border-b border-slate-800 space-y-2">
             {/* 1. If active Tasmee' Spotlight */}
