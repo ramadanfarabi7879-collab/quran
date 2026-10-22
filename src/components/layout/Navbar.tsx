@@ -69,8 +69,7 @@ export function Navbar({ onToggleMobileMenu }: NavbarProps = {}) {
 
   const checkActiveSession = async () => {
     try {
-      const roleQuery = user?.role ? `?role=${user.role.toLowerCase()}` : "";
-      const res = await fetch(`/api/live/session${roleQuery}`);
+      const res = await fetch("/api/live/session");
       if (res.ok) {
         const data = await res.json();
         if (data.session && data.session.status === "ACTIVE") {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useAuth, useRealtime } from "@/components/providers/AppProviders";
+import { useAuth } from "@/components/providers/AppProviders";
 import { playStudentApprovedSound, playScheduleAlertSound, playHalaqaStartSound } from "@/lib/sound";
 import {
   Bell,
@@ -22,8 +22,6 @@ interface StudentNotification {
   type: string;
   link?: string | null;
   createdAt: string;
-  isSessionActive?: boolean;
-  sessionData?: any;
 }
 
 const DECISION_TYPES = new Set([
@@ -34,30 +32,18 @@ const DECISION_TYPES = new Set([
   "REGISTRATION_REJECTED",
   "JOIN_REQUEST_DECIDED",
   "SESSION_REJECTED",
-  "JOIN_REQUEST_REJECTED",
   "HALAQA_STARTING",
   "SESSION_STARTED",
 ]);
 
 export function StudentDecisionOverlay() {
   const { user } = useAuth();
-  const { lastEvent } = useRealtime();
-
   const isTeacherPath = typeof window !== "undefined" && (window.location.pathname.startsWith("/teacher") || window.location.search.includes("role=teacher"));
   const isStudent = (user?.role !== "TEACHER" && user?.role !== "ADMIN" && !isTeacherPath);
 
   const [activeNotification, setActiveNotification] = useState<StudentNotification | null>(null);
   const [joining, setJoining] = useState(false);
   const seenIdsRef = React.useRef<Set<string>>(new Set());
-
-  // Listen to instant real-time events to immediately dismiss live session invitations when session ends
-  useEffect(() => {
-    if (lastEvent?.type === "HALAQA_LIVE_ENDED") {
-      if (activeNotification?.type === "HALAQA_STARTING" || activeNotification?.type === "SESSION_STARTED") {
-        setActiveNotification(null);
-      }
-    }
-  }, [lastEvent, activeNotification]);
 
   // PeerJS Direct Instant Listener for Real-Time Sheikh Decisions (<50ms)
   useEffect(() => {
@@ -167,24 +153,8 @@ export function StudentDecisionOverlay() {
           if (n.isRead) return false;
           if (seenIdsRef.current.has(n.id)) return false;
           if (typeof window !== "undefined" && localStorage.getItem(`dismissed_notif_${n.id}`)) return false;
-          if (!DECISION_TYPES.has(n.type)) return false;
-
-          // CRITICAL: Live session invitations MUST have a genuinely active live session right now!
-          if (n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") {
-            if (!n.isSessionActive || !data.activeLiveSession) {
-              return false;
-            }
-          }
-          return true;
+          return DECISION_TYPES.has(n.type);
         });
-
-        // If currently showing a live session notification, but the session is no longer active, dismiss immediately
-        if (activeNotification && (activeNotification.type === "HALAQA_STARTING" || activeNotification.type === "SESSION_STARTED")) {
-          const matching = (data.notifications || []).find((n: any) => n.id === activeNotification.id);
-          if (!matching?.isSessionActive || !data.activeLiveSession) {
-            setActiveNotification(null);
-          }
-        }
 
         if (unread.length > 0 && !activeNotification) {
           const latest = unread[0];
@@ -280,9 +250,9 @@ export function StudentDecisionOverlay() {
   if (!isStudent || !activeNotification) return null;
 
   const isLiveStarting = activeNotification.type === "HALAQA_STARTING" || activeNotification.type === "SESSION_STARTED";
-  const isApproved = activeNotification.type === "ACCOUNT_APPROVED" || activeNotification.type === "SESSION_APPROVED" || activeNotification.type === "JOIN_REQUEST_APPROVED";
+  const isApproved = activeNotification.type === "ACCOUNT_APPROVED" || activeNotification.type === "SESSION_APPROVED";
   const isRescheduled = activeNotification.type === "SCHEDULE_UPDATED";
-  const isRejected = activeNotification.type === "REGISTRATION_REJECTED" || activeNotification.type === "SESSION_REJECTED" || activeNotification.type === "JOIN_REQUEST_DECIDED" || activeNotification.type === "JOIN_REQUEST_REJECTED";
+  const isRejected = activeNotification.type === "REGISTRATION_REJECTED" || activeNotification.type === "SESSION_REJECTED";
 
   return (
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] w-[95%] max-w-md animate-in slide-in-from-top-6 duration-300 drop-shadow-2xl">
@@ -376,15 +346,6 @@ export function StudentDecisionOverlay() {
                 <Video className="w-4 h-4" />
                 <span>{joining ? "جارٍ الدخول..." : "قبول ودخول الجلسة 🎥"}</span>
               </button>
-            ) : activeNotification.link?.includes("/classroom/") ? (
-              <Link
-                href={activeNotification.link}
-                onClick={handleDismiss}
-                className="px-5 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 transition flex items-center gap-1.5 shadow-lg active:scale-95"
-              >
-                <Video className="w-4 h-4" />
-                <span>دخول الحلقة الآن 🎥</span>
-              </Link>
             ) : activeNotification.link ? (
               <Link
                 href={activeNotification.link}

@@ -240,19 +240,6 @@ export async function POST(req: Request) {
         }).catch(() => {});
       }
 
-      // Create persistent database notification for student
-      if (studentProfile?.user?.id) {
-        await prisma.notification.create({
-          data: {
-            userId: studentProfile.user.id,
-            title: "تم قبول طلب انضمامك للحلقة 🎉",
-            body: "وافق فضيلة الشيخ على انضمامك إلى الحلقة، يمكنك الدخول والمتابعة الآن.",
-            type: "JOIN_REQUEST_APPROVED",
-            link: resolvedSessionId ? `/classroom/${resolvedSessionId}?role=student` : "/student/my-halaqat",
-          },
-        }).catch(() => {});
-      }
-
       // Broadcast to student
       const approvalPayload = {
         sessionId: resolvedSessionId,
@@ -270,11 +257,6 @@ export async function POST(req: Request) {
 
       realtimeHub.broadcast("global", {
         type: "JOIN_REQUEST_APPROVED",
-        payload: approvalPayload,
-      });
-
-      realtimeHub.broadcast("global", {
-        type: "NEW_NOTIFICATION",
         payload: approvalPayload,
       });
 
@@ -374,13 +356,6 @@ export async function POST(req: Request) {
           studentId: resolvedStudentId,
           studentUserId: studentProfile?.user?.id,
           message: "تم الاعتذار عن قبول طلب الانضمام",
-        },
-      });
-
-      realtimeHub.broadcast("global", {
-        type: "NEW_NOTIFICATION",
-        payload: {
-          studentUserId: studentProfile?.user?.id,
         },
       });
 

@@ -159,44 +159,12 @@ export async function POST(req: Request) {
         });
       }
 
-      // Also ensure SessionAttendance record exists so it appears in attendance requests
-      await prisma.sessionAttendance.upsert({
-        where: {
-          sessionId_studentId: {
-            sessionId: targetSession.id,
-            studentId: studentProfileId,
-          },
-        },
-        update: {
-          requestedCheckIn: true,
-          isVerifiedByTeacher: false,
-          status: "ABSENT",
-          notes: notes || "طلب متابعة الجلسة",
-        },
-        create: {
-          sessionId: targetSession.id,
-          studentId: studentProfileId,
-          status: "ABSENT",
-          requestedCheckIn: true,
-          isVerifiedByTeacher: false,
-          notes: notes || "طلب متابعة الجلسة",
-        },
-      }).catch(() => {});
-
-      // Send in-app notification to all teachers/admins
+      // Send in-app notification to teacher
       const teacherUserId = targetSession.halaqa?.teacher?.userId;
-      const allTeachers = await prisma.user.findMany({
-        where: { role: { in: ["TEACHER", "ADMIN"] } },
-        select: { id: true },
-      });
-      const teacherUserIds = new Set<string>();
-      if (teacherUserId) teacherUserIds.add(teacherUserId);
-      allTeachers.forEach((t) => teacherUserIds.add(t.id));
-
-      for (const tid of Array.from(teacherUserIds)) {
+      if (teacherUserId) {
         await prisma.notification.create({
           data: {
-            userId: tid,
+            userId: teacherUserId,
             title: "طلب متابعة جلسة جديدة 👁️",
             body: `الطالب ${user.name} يطلب متابعة الجلسة المنعقدة الآن (${targetSession.halaqa?.name || targetSession.title}).`,
             type: "SESSION_FOLLOWUP_REQUEST",
@@ -211,7 +179,6 @@ export async function POST(req: Request) {
         sessionTitle: targetSession.title,
         halaqaName: targetSession.halaqa?.name || "حلقة القرآن الكريم",
         studentId: studentProfileId,
-        studentUserId: user.id,
         studentName: user.name || "طالب العلم",
         studentNumber: user.studentProfile?.studentNumber || "STU-000",
         studentAvatar: user.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150",
@@ -228,11 +195,6 @@ export async function POST(req: Request) {
 
       realtimeHub.broadcast("global", {
         type: "SESSION_FOLLOWUP_REQUESTED" as any,
-        payload: alertPayload,
-      });
-
-      realtimeHub.broadcast("global", {
-        type: "NEW_NOTIFICATION",
         payload: alertPayload,
       });
 
