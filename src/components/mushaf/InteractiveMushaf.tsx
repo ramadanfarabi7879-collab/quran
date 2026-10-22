@@ -1307,7 +1307,7 @@ export function InteractiveMushaf({
             </div>
 
             {/* Madinah Mushaf Page Image Container */}
-            <div className="relative flex justify-center items-center min-h-[480px] sm:min-h-[680px] bg-white dark:bg-slate-900 rounded-xl overflow-auto shadow-inner border border-slate-200/80 dark:border-slate-800 w-full max-w-full">
+            <div className="relative flex justify-center items-center min-h-[520px] sm:min-h-[700px] bg-white dark:bg-slate-900 rounded-xl overflow-hidden shadow-inner border border-slate-200/80 dark:border-slate-800">
               {/* Spinner while loading */}
               {imageLoading && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#fffdf9]/90 dark:bg-slate-900/90 z-10 gap-3">
