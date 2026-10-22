@@ -21,24 +21,9 @@ async function cleanupStaleSessions() {
       const startedTime = sess.startedAt ? new Date(sess.startedAt).getTime() : 0;
       const ageMs = now - startedTime;
 
-      // 1. If session started more than 3 hours ago -> always stale
-      if (ageMs > 3 * 60 * 60 * 1000) {
+      // Only clean up sessions that started more than 4 hours ago (clearly abandoned)
+      if (ageMs > 4 * 60 * 60 * 1000) {
         staleIds.push(sess.id);
-        continue;
-      }
-
-      // 2. If session is older than 10 minutes, check for recent signal activity
-      if (ageMs > 10 * 60 * 1000) {
-        const lastSignal = await prisma.classroomSignal.findFirst({
-          where: { sessionId: sess.id },
-          orderBy: { id: "desc" },
-          select: { createdAt: true },
-        });
-
-        // If no signal ever, or last signal was > 10 minutes ago, session is abandoned
-        if (!lastSignal || (now - new Date(lastSignal.createdAt).getTime()) > 10 * 60 * 1000) {
-          staleIds.push(sess.id);
-        }
       }
     }
 

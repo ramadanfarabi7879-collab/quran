@@ -46,7 +46,7 @@ export default function StudentDashboard() {
         fetch("/api/teacher/halaqat"),
         fetch("/api/assignments"),
         fetch("/api/evaluations"),
-        fetch("/api/live/session"),
+        fetch("/api/live/session?role=student"),
       ]);
 
       if (resH.ok) {

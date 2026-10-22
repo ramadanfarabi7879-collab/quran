@@ -42,12 +42,8 @@ export function StudentDecisionOverlay() {
   const { user } = useAuth();
   const { lastEvent } = useRealtime();
 
-  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
-  const isTeacherPath = typeof window !== "undefined" && (pathname.startsWith("/teacher") || window.location.search.includes("role=teacher"));
-  const isPublicGateway = pathname === "/" || pathname === "/login" || pathname === "/register";
-
-  // Prevent overlay on public landing gateways unless user is authenticated as STUDENT
-  const isStudent = (user?.role === "STUDENT" || (!user && !isPublicGateway && pathname.startsWith("/student"))) && !isTeacherPath;
+  const isTeacherPath = typeof window !== "undefined" && (window.location.pathname.startsWith("/teacher") || window.location.search.includes("role=teacher"));
+  const isStudent = (user?.role !== "TEACHER" && user?.role !== "ADMIN" && !isTeacherPath);
 
   const [activeNotification, setActiveNotification] = useState<StudentNotification | null>(null);
   const [joining, setJoining] = useState(false);
@@ -172,10 +168,9 @@ export function StudentDecisionOverlay() {
           if (typeof window !== "undefined" && localStorage.getItem(`dismissed_notif_${n.id}`)) return false;
           if (!DECISION_TYPES.has(n.type)) return false;
 
-          // CRITICAL: Live session invitations MUST have an active live session!
+          // CRITICAL: Live session invitations MUST have a genuinely active live session right now!
           if (n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") {
             if (!n.isSessionActive || !data.activeLiveSession) {
-              seenIdsRef.current.add(n.id);
               return false;
             }
           }
