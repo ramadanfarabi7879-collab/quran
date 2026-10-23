@@ -231,14 +231,18 @@ export function SheikhDecisionOverlay() {
       });
     }
 
-    // 2. Student requested to join live session
-    if (lastEvent.type === "SESSION_JOIN_REQUESTED" || lastEvent.type === "JOIN_REQUEST_SUBMITTED") {
+    // 2. Student requested to join live session or halaqa
+    if (
+      lastEvent.type === "SESSION_JOIN_REQUESTED" ||
+      lastEvent.type === "JOIN_REQUEST_SUBMITTED" ||
+      lastEvent.type === "SESSION_FOLLOWUP_REQUESTED"
+    ) {
       const p = lastEvent.payload;
       if (p.requestId && isDismissed(p.requestId)) return;
 
       playTeacherJoinAlertSound();
       const newItem: DecisionItem = {
-        id: `sess-${p.sessionId || "live"}-${p.studentId}-${Date.now()}`,
+        id: `sess-${p.requestId || p.sessionId || p.studentId}-${Date.now()}`,
         type: "SESSION_JOIN",
         studentId: p.studentId,
         studentUserId: p.studentUserId,
@@ -249,9 +253,10 @@ export function SheikhDecisionOverlay() {
         halaqaId: p.halaqaId,
         halaqaName: p.halaqaName || "الحلقة القرآنية",
         requestId: p.requestId,
+        notes: p.notes,
       };
       setQueue((prev) => {
-        if (prev.some((item) => item.studentId === newItem.studentId && item.sessionId === newItem.sessionId)) {
+        if (prev.some((item) => (item.requestId && item.requestId === newItem.requestId) || (item.id === newItem.id))) {
           return prev;
         }
         return [...prev, newItem];

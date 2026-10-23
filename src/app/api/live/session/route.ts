@@ -3,6 +3,61 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { realtimeHub } from "@/lib/realtime";
 
+export const dynamic = "force-dynamic";
+
+async function cleanupStaleSessions() {
+  try {
+    const activeSessions = await prisma.liveSession.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true, startedAt: true, halaqaId: true },
+    });
+
+    if (activeSessions.length === 0) return;
+
+    const now = Date.now();
+    const staleIds: string[] = [];
+
+    for (const sess of activeSessions) {
+      const startedTime = sess.startedAt ? new Date(sess.startedAt).getTime() : 0;
+      const ageMs = now - startedTime;
+
+      // Only clean up sessions that started more than 4 hours ago (clearly abandoned)
+      if (ageMs > 4 * 60 * 60 * 1000) {
+        staleIds.push(sess.id);
+      }
+    }
+
+    if (staleIds.length > 0) {
+      await prisma.liveSession.updateMany({
+        where: { id: { in: staleIds } },
+        data: { status: "ENDED", endedAt: new Date() },
+      });
+
+      await prisma.halaqa.updateMany({
+        where: { currentLiveSessionId: { in: staleIds } },
+        data: { isLiveNow: false, currentLiveSessionId: null },
+      });
+
+      for (const sid of staleIds) {
+        await prisma.notification.updateMany({
+          where: {
+            type: "HALAQA_STARTING",
+            link: { contains: sid },
+          },
+          data: { isRead: true },
+        });
+      }
+
+      realtimeHub.broadcast("global", {
+        type: "HALAQA_LIVE_ENDED",
+        payload: { sessionId: staleIds[0] },
+      });
+    }
+  } catch (err) {
+    console.warn("Stale session cleanup error:", err);
+  }
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -16,12 +71,19 @@ export async function GET(req: Request) {
       await prisma.halaqa.updateMany({
         data: { isLiveNow: false, currentLiveSessionId: null },
       });
+      await prisma.notification.updateMany({
+        where: { type: "HALAQA_STARTING", isRead: false },
+        data: { isRead: true },
+      });
       realtimeHub.broadcast("global", {
         type: "HALAQA_LIVE_ENDED",
         payload: { sessionId: "all" },
       });
       return NextResponse.json({ success: true, message: "تم إنهاء كافة الجلسات النشطة بنجاح" });
     }
+
+    // Auto cleanup stale/abandoned sessions before resolving current state
+    await cleanupStaleSessions();
 
     const sessionId = searchParams.get("sessionId");
     const halaqaId = searchParams.get("halaqaId");
@@ -179,11 +241,11 @@ export async function GET(req: Request) {
         } else if (followUpReq?.status === "REJECTED") {
           isAuthorized = false;
           authorizationStatus = "REJECTED";
-        } else if (followUpReq?.status === "PENDING" || sessionAtt?.requestedCheckIn) {
+        } else if (followUpReq?.status === "PENDING" || (sessionAtt?.requestedCheckIn && !sessionAtt?.isVerifiedByTeacher)) {
           isAuthorized = false;
           authorizationStatus = "PENDING_APPROVAL";
         } else {
-          // If session is active with existing participants and student hasn't been approved yet:
+          // If session is active, check if there is an explicit pending request
           const hasPendingHalaqa = session.halaqa.joinRequests?.some(
             (r: any) => (r.student?.userId === effectiveUser.id || r.studentId === studentProfileId) && r.status === "PENDING"
           );
@@ -191,8 +253,9 @@ export async function GET(req: Request) {
             isAuthorized = false;
             authorizationStatus = "PENDING_APPROVAL";
           } else {
-            isAuthorized = false;
-            authorizationStatus = "NEEDS_REQUEST";
+            // Teacher is holding an open live session; active registered students are welcome to attend!
+            isAuthorized = true;
+            authorizationStatus = "AUTHORIZED";
           }
         }
       }
@@ -327,6 +390,14 @@ export async function POST(req: Request) {
         currentLiveSessionId: null,
       },
     });
+    // Mark any previous unread HALAQA_STARTING notifications as read to avoid stale invitations
+    await prisma.notification.updateMany({
+      where: {
+        type: "HALAQA_STARTING",
+        isRead: false,
+      },
+      data: { isRead: true },
+    });
 
     // Create session
     const halaqaId = halaqa.id;
@@ -365,9 +436,21 @@ export async function POST(req: Request) {
     // Since Teacher initiates the session, students are pre-verified to join without needing second approval!
     const studentUserIdsToNotify = new Set<string>();
     for (const enrollment of halaqa.enrollments) {
-      studentUserIdsToNotify.add(enrollment.student.user.id);
-      await prisma.sessionAttendance.create({
-        data: {
+      if (enrollment.student?.user?.id) {
+        studentUserIdsToNotify.add(enrollment.student.user.id);
+      }
+      await prisma.sessionAttendance.upsert({
+        where: {
+          sessionId_studentId: {
+            sessionId: liveSession.id,
+            studentId: enrollment.studentId,
+          },
+        },
+        update: {
+          status: "ABSENT",
+          isVerifiedByTeacher: true,
+        },
+        create: {
           sessionId: liveSession.id,
           studentId: enrollment.studentId,
           status: "ABSENT",
@@ -376,22 +459,32 @@ export async function POST(req: Request) {
       }).catch(() => {});
     }
 
-    // If no enrollments found for this halaqa, find all active students in the platform
-    if (studentUserIdsToNotify.size === 0) {
-      const allStudents = await prisma.studentProfile.findMany({
-        include: { user: true },
-      });
-      for (const st of allStudents) {
+    // Also notify and authorize all active students across the platform
+    const allActiveStudents = await prisma.studentProfile.findMany({
+      where: { user: { isActive: true } },
+      include: { user: true },
+    });
+    for (const st of allActiveStudents) {
+      if (st.user?.id) {
         studentUserIdsToNotify.add(st.user.id);
-        await prisma.sessionAttendance.create({
-          data: {
+      }
+      await prisma.sessionAttendance.upsert({
+        where: {
+          sessionId_studentId: {
             sessionId: liveSession.id,
             studentId: st.id,
-            status: "ABSENT",
-            isVerifiedByTeacher: true, // Sheikh invited them; 1-click direct join!
           },
-        }).catch(() => {});
-      }
+        },
+        update: {
+          isVerifiedByTeacher: true,
+        },
+        create: {
+          sessionId: liveSession.id,
+          studentId: st.id,
+          status: "ABSENT",
+          isVerifiedByTeacher: true, // Sheikh invited them; 1-click direct join!
+        },
+      }).catch(() => {});
     }
 
     // Send database notifications to each student without duplicate spam
@@ -413,6 +506,11 @@ export async function POST(req: Request) {
             type: "HALAQA_STARTING",
             link: `/classroom/${liveSession.id}?role=student`,
           },
+        });
+      } else if (existing.isRead) {
+        await prisma.notification.update({
+          where: { id: existing.id },
+          data: { isRead: false },
         });
       }
     }
@@ -463,10 +561,24 @@ export async function DELETE(req: Request) {
         where: { id: sessionId },
         data: { status: "ENDED", endedAt: new Date() },
       });
+      await prisma.notification.updateMany({
+        where: {
+          type: "HALAQA_STARTING",
+          link: { contains: sessionId },
+        },
+        data: { isRead: true },
+      });
     } else {
       await prisma.liveSession.updateMany({
         where: { status: "ACTIVE" },
         data: { status: "ENDED", endedAt: new Date() },
+      });
+      await prisma.notification.updateMany({
+        where: {
+          type: "HALAQA_STARTING",
+          isRead: false,
+        },
+        data: { isRead: true },
       });
     }
 

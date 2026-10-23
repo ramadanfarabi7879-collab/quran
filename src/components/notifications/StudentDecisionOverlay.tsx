@@ -22,6 +22,8 @@ interface StudentNotification {
   type: string;
   link?: string | null;
   createdAt: string;
+  isSessionActive?: boolean;
+  sessionData?: any;
 }
 
 const DECISION_TYPES = new Set([
@@ -32,6 +34,7 @@ const DECISION_TYPES = new Set([
   "REGISTRATION_REJECTED",
   "JOIN_REQUEST_DECIDED",
   "SESSION_REJECTED",
+  "JOIN_REQUEST_REJECTED",
   "HALAQA_STARTING",
   "SESSION_STARTED",
 ]);
@@ -39,6 +42,7 @@ const DECISION_TYPES = new Set([
 export function StudentDecisionOverlay() {
   const { user } = useAuth();
   const { lastEvent } = useRealtime();
+
   const isTeacherPath = typeof window !== "undefined" && (window.location.pathname.startsWith("/teacher") || window.location.search.includes("role=teacher"));
   const isStudent = (user?.role !== "TEACHER" && user?.role !== "ADMIN" && !isTeacherPath);
 
@@ -46,34 +50,11 @@ export function StudentDecisionOverlay() {
   const [joining, setJoining] = useState(false);
   const seenIdsRef = React.useRef<Set<string>>(new Set());
 
-  // Listen to instant real-time events for live sessions
+  // Listen to instant real-time events to immediately dismiss live session invitations when session ends
   useEffect(() => {
-    if (lastEvent) {
-      if (lastEvent.type === "HALAQA_LIVE_STARTED" && lastEvent.payload) {
-        const p = lastEvent.payload;
-        const liveId = `live-${p.sessionId}`;
-        if (!seenIdsRef.current.has(liveId)) {
-          seenIdsRef.current.add(liveId);
-          setActiveNotification({
-            id: liveId,
-            type: "HALAQA_STARTING",
-            title: `بدأت الحلقة الآن: ${p.halaqaName || "حلقة القرآن الكريم"}`,
-            body: `فضيلة ${p.teacherName || "الشيخ"} في انتظارك في الغرفة الافتراضية، اضغط للانضمام مباشرة.`,
-            link: `/classroom/${p.sessionId}?role=student`,
-            createdAt: new Date().toISOString(),
-          });
-          playHalaqaStartSound();
-        }
-      } else if (lastEvent.type === "HALAQA_LIVE_ENDED") {
-        if (activeNotification?.type === "HALAQA_STARTING" || activeNotification?.type === "SESSION_STARTED") {
-          setActiveNotification(null);
-        }
-      } else if (lastEvent.type === "SESSION_JOIN_APPROVED" || lastEvent.type === "JOIN_REQUEST_APPROVED") {
-        const p = lastEvent.payload;
-        if (p?.sessionId) {
-          playStudentApprovedSound();
-          window.location.href = `/classroom/${p.sessionId}?role=student`;
-        }
+    if (lastEvent?.type === "HALAQA_LIVE_ENDED") {
+      if (activeNotification?.type === "HALAQA_STARTING" || activeNotification?.type === "SESSION_STARTED") {
+        setActiveNotification(null);
       }
     }
   }, [lastEvent, activeNotification]);
@@ -186,9 +167,24 @@ export function StudentDecisionOverlay() {
           if (n.isRead) return false;
           if (seenIdsRef.current.has(n.id)) return false;
           if (typeof window !== "undefined" && localStorage.getItem(`dismissed_notif_${n.id}`)) return false;
-          if ((n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") && !n.isSessionActive) return false;
-          return DECISION_TYPES.has(n.type);
+          if (!DECISION_TYPES.has(n.type)) return false;
+
+          // CRITICAL: Live session invitations MUST have a genuinely active live session right now!
+          if (n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") {
+            if (!n.isSessionActive || !data.activeLiveSession) {
+              return false;
+            }
+          }
+          return true;
         });
+
+        // If currently showing a live session notification, but the session is no longer active, dismiss immediately
+        if (activeNotification && (activeNotification.type === "HALAQA_STARTING" || activeNotification.type === "SESSION_STARTED")) {
+          const matching = (data.notifications || []).find((n: any) => n.id === activeNotification.id);
+          if (!matching?.isSessionActive || !data.activeLiveSession) {
+            setActiveNotification(null);
+          }
+        }
 
         if (unread.length > 0 && !activeNotification) {
           const latest = unread[0];
@@ -284,9 +280,9 @@ export function StudentDecisionOverlay() {
   if (!isStudent || !activeNotification) return null;
 
   const isLiveStarting = activeNotification.type === "HALAQA_STARTING" || activeNotification.type === "SESSION_STARTED";
-  const isApproved = activeNotification.type === "ACCOUNT_APPROVED" || activeNotification.type === "SESSION_APPROVED";
+  const isApproved = activeNotification.type === "ACCOUNT_APPROVED" || activeNotification.type === "SESSION_APPROVED" || activeNotification.type === "JOIN_REQUEST_APPROVED";
   const isRescheduled = activeNotification.type === "SCHEDULE_UPDATED";
-  const isRejected = activeNotification.type === "REGISTRATION_REJECTED" || activeNotification.type === "SESSION_REJECTED";
+  const isRejected = activeNotification.type === "REGISTRATION_REJECTED" || activeNotification.type === "SESSION_REJECTED" || activeNotification.type === "JOIN_REQUEST_DECIDED" || activeNotification.type === "JOIN_REQUEST_REJECTED";
 
   return (
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] w-[95%] max-w-md animate-in slide-in-from-top-6 duration-300 drop-shadow-2xl">
@@ -380,6 +376,15 @@ export function StudentDecisionOverlay() {
                 <Video className="w-4 h-4" />
                 <span>{joining ? "جارٍ الدخول..." : "قبول ودخول الجلسة 🎥"}</span>
               </button>
+            ) : activeNotification.link?.includes("/classroom/") ? (
+              <Link
+                href={activeNotification.link}
+                onClick={handleDismiss}
+                className="px-5 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 transition flex items-center gap-1.5 shadow-lg active:scale-95"
+              >
+                <Video className="w-4 h-4" />
+                <span>دخول الحلقة الآن 🎥</span>
+              </Link>
             ) : activeNotification.link ? (
               <Link
                 href={activeNotification.link}

@@ -50,7 +50,7 @@ export async function GET(req: Request) {
       let isSessionActive = false;
       let sessionData = null;
 
-      if (n.type === "HALAQA_STARTING") {
+      if (n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") {
         const targetSessionId = n.link ? n.link.split("/classroom/")[1]?.split("?")[0] : null;
         if (targetSessionId && activeSessionMap.has(targetSessionId)) {
           isSessionActive = true;
@@ -70,6 +70,53 @@ export async function GET(req: Request) {
         sessionData,
       };
     });
+
+    // Auto-mark any stale live session notifications whose sessions already ended as read
+    const endedNotifIds = enrichedNotifications
+      .filter((n) => (n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") && !n.isRead && !n.isSessionActive)
+      .map((n) => n.id);
+
+    if (endedNotifIds.length > 0) {
+      await prisma.notification.updateMany({
+        where: { id: { in: endedNotifIds } },
+        data: { isRead: true },
+      }).catch(() => {});
+    }
+
+    // Ensure student receives active live session invitation if one is currently active
+    if (activeSessions.length > 0) {
+      const currentActive = activeSessions[0];
+      const hasUnreadLive = enrichedNotifications.some(
+        (n) => (n.type === "HALAQA_STARTING" || n.type === "SESSION_STARTED") &&
+               n.link?.includes(currentActive.id) && !n.isRead
+      );
+
+      if (!hasUnreadLive) {
+        const newNotif = await prisma.notification.create({
+          data: {
+            userId,
+            title: `بدأت الحلقة الآن: ${currentActive.halaqa?.name || currentActive.title}`,
+            body: `فضيلة ${currentActive.halaqa?.teacher?.user?.name || "الشيخ"} في انتظارك في الغرفة الافتراضية، اضغط للانضمام مباشرة.`,
+            type: "HALAQA_STARTING",
+            link: `/classroom/${currentActive.id}?role=student`,
+            isRead: false,
+          },
+        }).catch(() => null);
+
+        if (newNotif) {
+          enrichedNotifications.unshift({
+            ...newNotif,
+            isSessionActive: true,
+            sessionData: {
+              id: currentActive.id,
+              title: currentActive.title,
+              halaqaName: currentActive.halaqa?.name,
+              teacherName: currentActive.halaqa?.teacher?.user?.name,
+            },
+          });
+        }
+      }
+    }
 
     // Determine the most relevant active live session for this user
     const firstActive = activeSessions.length > 0 ? activeSessions[0] : null;
